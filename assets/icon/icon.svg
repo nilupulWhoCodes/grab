@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="230" fill="#0F1012"/><g transform="translate(512 512) scale(1.25) translate(-532 -470)"><g fill="#D4FF4F">
+  <!-- note head -->
+  <ellipse cx="440" cy="660" rx="118" ry="92" transform="rotate(-22 440 660)"/>
+  <!-- stem -->
+  <rect x="512" y="268" width="50" height="400" rx="10"/>
+  <!-- download arrow as the flag -->
+  <rect x="660" y="268" width="50" height="210" rx="10"/>
+  <path d="M600 450 L770 450 L685 560 Z" stroke="#D4FF4F" stroke-width="22" stroke-linejoin="round"/>
+  <!-- bar joining stem and arrow -->
+  <rect x="512" y="268" width="198" height="50" rx="10"/>
+</g>
+</g></svg>
