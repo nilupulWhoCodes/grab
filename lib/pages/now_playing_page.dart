@@ -48,9 +48,22 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   bool _closing = false;
 
   // Swipe the artwork left/right to change song.
-  final PageController _pager = PageController(viewportFraction: 1);
+  // keepPage: false so a rebuilt pager never restores an old page.
+  final PageController _pager =
+      PageController(viewportFraction: 1, keepPage: false);
   bool _syncing = false;
   int? _shownIndex;
+
+  /// Song the user swiped to, until the player confirms it's playing.
+  int? _pendingIndex;
+  DateTime _pendingSince = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _swipedTo(int index) {
+    _pendingIndex = index;
+    _pendingSince = DateTime.now();
+    _shownIndex = index;
+    PlayerController.instance.jumpTo(index);
+  }
 
   @override
   void dispose() {
@@ -79,12 +92,27 @@ class _NowPlayingPageState extends State<NowPlayingPage>
 
   /// Keeps the artwork pager on the song that's actually playing.
   void _syncPager(List<int> order, int? current) {
-    if (current == null || current == _shownIndex) return;
+    if (current == null) return;
+    // After a swipe, ignore the old song until the player has switched
+    // (or give up after 2 s if it never does).
+    if (_pendingIndex != null) {
+      final waited = DateTime.now().difference(_pendingSince);
+      if (current != _pendingIndex && waited < const Duration(seconds: 2)) {
+        return;
+      }
+      _pendingIndex = null;
+    }
+    if (current == _shownIndex) return;
     _shownIndex = current;
     final page = order.indexOf(current);
     if (page < 0) return;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || !_pager.hasClients) return;
+      // Never move the card while a finger is on it.
+      if (_pager.position.isScrollingNotifier.value) {
+        _shownIndex = null; // try again on the next update
+        return;
+      }
       final now = _pager.page?.round();
       if (now == page) return;
       _syncing = true;
@@ -244,8 +272,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                               page >= 0 &&
                               page < order.length &&
                               order[page] != p.currentIndex) {
-                            _shownIndex = order[page];
-                            p.jumpTo(order[page]);
+                            _swipedTo(order[page]);
                           }
                           return false;
                         },
