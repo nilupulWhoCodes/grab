@@ -65,11 +65,18 @@ jobs:
       # Version 1.0.<build> / build number <build>: the app compares this
       # number with the latest release tag to offer updates.
       - name: Build APK
-        run: >
-          flutter build apk --release --split-per-abi
-          --build-name "1.0.${{ github.run_number }}"
-          --build-number "${{ github.run_number }}"
-          --dart-define=GRAB_BUILD=${{ github.run_number }}
+        run: |
+          set -o pipefail
+          if ! flutter build apk --release --split-per-abi \
+              --build-name "1.0.${{ github.run_number }}" \
+              --build-number "${{ github.run_number }}" \
+              --dart-define=GRAB_BUILD=${{ github.run_number }} 2>&1 | tee build.log; then
+            # Surface the real error as one annotation (readable via the API).
+            msg=$(grep -E "^e: |error:|Error:|What went wrong|Execution failed|> |FAILURE|Exception" build.log \
+                  | grep -v "^\s*$" | tail -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Build APK failed::${msg}"
+            exit 1
+          fi
 
       - name: Collect APKs
         id: collect
