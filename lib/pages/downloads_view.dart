@@ -83,7 +83,6 @@ class DownloadsView extends StatelessWidget {
                 ),
               ),
             ),
-            if (player.currentPath != null) const _MiniPlayer(),
           ],
         );
       },
@@ -333,92 +332,6 @@ class _TrackRow extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _MiniPlayer extends StatelessWidget {
-  const _MiniPlayer();
-
-  String _fmt(Duration d) =>
-      '${d.inMinutes}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}';
-
-  @override
-  Widget build(BuildContext context) {
-    final p = PlayerController.instance;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: StreamBuilder<Duration>(
-        stream: p.player.positionStream,
-        builder: (context, snap) {
-          final pos = snap.data ?? Duration.zero;
-          final dur = p.player.duration ?? Duration.zero;
-          final frac = dur.inMilliseconds == 0
-              ? 0.0
-              : (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0);
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(p.currentTitle ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text('${_fmt(pos)} / ${_fmt(dur)}',
-                            style: const TextStyle(
-                                fontSize: 12, color: AppColors.muted)),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Previous',
-                    onPressed: p.previous,
-                    icon: const Icon(Icons.skip_previous_rounded),
-                  ),
-                  IconButton.filled(
-                    tooltip: p.isPlaying ? 'Pause' : 'Play',
-                    onPressed: p.toggle,
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      foregroundColor: AppColors.bg,
-                    ),
-                    icon: Icon(p.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded),
-                  ),
-                  IconButton(
-                    tooltip: 'Next',
-                    onPressed: p.next,
-                    icon: const Icon(Icons.skip_next_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: frac,
-                  minHeight: 3,
-                  backgroundColor: AppColors.placeholder,
-                ),
-              ),
-            ],
-          );
-        },
       ),
     );
   }

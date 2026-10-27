@@ -6,6 +6,7 @@ import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'library_service.dart';
 import 'storage_service.dart';
 import 'youtube_service.dart';
 
@@ -112,6 +113,7 @@ class DownloadManager extends ChangeNotifier {
     try {
       await f.delete();
     } catch (_) {}
+    LibraryService.instance.removeFile(f.path);
     await refreshLibrary();
   }
 
@@ -194,6 +196,7 @@ class DownloadManager extends ChangeNotifier {
       t.status = TaskStatus.done;
       tasks.remove(t);
       await refreshLibrary();
+      LibraryService.instance.addFile(out.path);
     } on _Cancelled {
       t.status = TaskStatus.cancelled;
       tasks.remove(t);

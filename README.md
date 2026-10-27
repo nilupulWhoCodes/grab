@@ -2,8 +2,8 @@
 
 An Android app with two parts:
 
-1. **Part 1**: placeholder, to be defined.
-2. **MP3**: browse YouTube's mobile site inside the app. When a video is open, a **MP3** button appears. Pick a quality (128/192/320 kbps) and the audio is downloaded and converted to MP3 on the phone, then saved to `Music/Grab`. A Downloads tab lists saved tracks with a built-in player.
+1. **Music**: a music player for the MP3s already on the phone. It scans internal storage and SD cards (skipping ringtones and notification sounds), with search, Recent/A–Z sorting and shuffle all. A full Now Playing screen has seeking, shuffle and repeat. Playback keeps going with the screen off, with controls on the lock screen and in the notification shade.
+2. **MP3**: browse YouTube's mobile site inside the app. When a video is open, a **MP3** button appears. Pick a quality (128/192/320 kbps) and the audio is downloaded and converted to MP3 on the phone, then saved to `Music/Grab`. A Downloads tab lists saved tracks. New downloads show up in Music right away.
 
 Everything runs on the phone. No server is needed.
 
@@ -23,9 +23,9 @@ Copy the APK to the phone, open it and allow "Install unknown apps" when Android
 | In-app browser | `webview_flutter` |
 | Finding the audio stream | `youtube_explode_dart` |
 | Converting to MP3 | `ffmpeg_kit_flutter_new_audio` (LAME) |
-| Playback | `just_audio` |
+| Playback | `just_audio` + `just_audio_background` |
 
-The `android/` folder isn't committed. CI generates it with `flutter create` and then applies `tool/patch_android.py` (permissions, minSdk 24, R8 keep rules).
+The `android/` folder isn't committed. CI generates it with `flutter create` and then applies `tool/patch_android.py` (permissions, background-playback service, minSdk 24, R8 keep rules).
 
 ## If downloads stop working
 

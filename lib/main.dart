@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 
+import 'pages/library_page.dart';
 import 'pages/mp3_page.dart';
-import 'pages/part_one_page.dart';
 import 'services/download_manager.dart';
 import 'theme.dart';
+import 'widgets/mini_player.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.nilupul.grab.playback',
+    androidNotificationChannelName: 'Playback',
+    androidNotificationOngoing: true,
+  );
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -40,15 +47,15 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int _tab = 1; // open on the MP3 part
+  int _tab = 0; // open on the music player
   final _mp3Key = GlobalKey<Mp3PageState>();
 
   Future<void> _onBack() async {
     if (_tab == 1 && (await _mp3Key.currentState?.handleBack() ?? false)) {
       return;
     }
-    if (_tab != 1) {
-      setState(() => _tab = 1);
+    if (_tab != 0) {
+      setState(() => _tab = 0);
       return;
     }
     await SystemNavigator.pop();
@@ -67,14 +74,20 @@ class _HomeShellState extends State<HomeShell> {
           child: IndexedStack(
             index: _tab,
             children: [
-              const PartOnePage(),
+              const LibraryPage(),
               Mp3Page(key: _mp3Key),
             ],
           ),
         ),
-        bottomNavigationBar: _BottomNav(
-          index: _tab,
-          onTap: (i) => setState(() => _tab = i),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const MiniPlayer(),
+            _BottomNav(
+              index: _tab,
+              onTap: (i) => setState(() => _tab = i),
+            ),
+          ],
         ),
       ),
     );
@@ -101,8 +114,8 @@ class _BottomNav extends StatelessWidget {
           child: Row(
             children: [
               _NavItem(
-                icon: Icons.grid_view_rounded,
-                label: 'Part 1',
+                icon: Icons.library_music_rounded,
+                label: 'Music',
                 selected: index == 0,
                 onTap: () => onTap(0),
               ),

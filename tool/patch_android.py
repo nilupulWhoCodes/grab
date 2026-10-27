@@ -18,6 +18,28 @@ permissions = """
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+"""
+
+# Background playback + lock-screen controls (audio_service, used by
+# just_audio_background).
+audio_service = """
+        <service android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 """
 if "READ_MEDIA_AUDIO" not in text:
     text = re.sub(r"(<manifest[^>]*>)", r"\1" + permissions, text, count=1)
@@ -29,7 +51,24 @@ if "requestLegacyExternalStorage" not in text:
         '<application\n        android:requestLegacyExternalStorage="true"',
         1,
     )
+if "com.ryanheise.audioservice.AudioService" not in text:
+    i = text.rindex("</application>")
+    text = text[:i] + audio_service.lstrip("\n") + "    " + text[i:]
 manifest.write_text(text, encoding="utf-8")
+
+# --- MainActivity must extend AudioServiceActivity ---------------------------
+activities = list((app / "src" / "main").rglob("MainActivity.kt"))
+if not activities:
+    sys.exit("MainActivity.kt not found")
+for act in activities:
+    src = act.read_text(encoding="utf-8")
+    package = re.search(r"^package\s+([\w.]+)", src, re.M).group(1)
+    act.write_text(
+        f"package {package}\n\n"
+        "import com.ryanheise.audioservice.AudioServiceActivity\n\n"
+        "class MainActivity : AudioServiceActivity()\n",
+        encoding="utf-8",
+    )
 
 # --- build.gradle(.kts): minSdk 24 (needed by ffmpeg-kit) --------------------
 gradle_kts = app / "build.gradle.kts"

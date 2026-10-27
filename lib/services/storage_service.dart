@@ -32,6 +32,31 @@ class StorageService {
     }
   }
 
+  /// Permission to read music files saved by other apps.
+  Future<bool> ensureReadPermission() async {
+    if (!Platform.isAndroid) return true;
+    final sdk = await _sdkInt();
+    final p = sdk >= 33 ? Permission.audio : Permission.storage;
+    var status = await p.status;
+    if (!status.isGranted) status = await p.request();
+    return status.isGranted || status.isLimited;
+  }
+
+  Future<bool> hasReadPermission() async {
+    if (!Platform.isAndroid) return true;
+    final sdk = await _sdkInt();
+    final p = sdk >= 33 ? Permission.audio : Permission.storage;
+    final status = await p.status;
+    return status.isGranted || status.isLimited;
+  }
+
+  Future<bool> isReadPermissionPermanentlyDenied() async {
+    if (!Platform.isAndroid) return false;
+    final sdk = await _sdkInt();
+    final p = sdk >= 33 ? Permission.audio : Permission.storage;
+    return (await p.status).isPermanentlyDenied;
+  }
+
   Future<Directory> musicDir() async {
     if (_dir != null) return _dir!;
     if (Platform.isAndroid) {
