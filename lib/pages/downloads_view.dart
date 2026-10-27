@@ -338,16 +338,7 @@ class _TrackRow extends StatelessWidget {
               ),
             ),
             SongMenu(
-              onPlayNext: () {
-                PlayerController.instance.playNext(file.path);
-                showQueuedSnack(context,
-                    'Playing next: ${PlayerController.titleOf(file.path)}');
-              },
-              onAddToQueue: () {
-                PlayerController.instance.addToQueue(file.path);
-                showQueuedSnack(context,
-                    'Added to queue: ${PlayerController.titleOf(file.path)}');
-              },
+              path: file.path,
               onDelete: () => _confirmDelete(context),
             ),
           ],

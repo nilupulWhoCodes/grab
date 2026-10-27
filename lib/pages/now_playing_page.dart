@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../services/player_controller.dart';
+import '../services/playlist_service.dart';
 import '../theme.dart';
 import '../widgets/art_thumb.dart';
 import '../widgets/mini_player.dart' show formatTime;
@@ -100,14 +101,51 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                           ),
                   ),
                   const Spacer(),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      p.currentTitle ?? '',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: displayStyle(24, weight: FontWeight.w600),
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          p.currentTitle ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: displayStyle(24, weight: FontWeight.w600),
+                        ),
+                      ),
+                      ListenableBuilder(
+                        listenable: PlaylistService.instance,
+                        builder: (context, _) {
+                          final path = p.currentPath;
+                          final fav = path != null &&
+                              PlaylistService.instance.isFavourite(path);
+                          return IconButton(
+                            tooltip: fav
+                                ? 'Remove from Favourites'
+                                : 'Add to Favourites',
+                            onPressed: path == null
+                                ? null
+                                : () => PlaylistService.instance
+                                    .toggleFavourite(path),
+                            icon: Icon(
+                              fav
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              color: fav ? AppColors.accent : AppColors.muted,
+                              size: 28,
+                            ),
+                          );
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Add to playlist',
+                        onPressed: p.currentPath == null
+                            ? null
+                            : () =>
+                                showAddToPlaylistSheet(context, p.currentPath!),
+                        icon: const Icon(Icons.playlist_add_rounded,
+                            color: AppColors.muted, size: 28),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   Align(

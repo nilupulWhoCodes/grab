@@ -7,6 +7,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'library_service.dart';
+import 'playlist_service.dart';
 import 'widget_service.dart';
 
 /// One shared player for the whole app (Music and MP3 parts), with an
@@ -18,6 +19,32 @@ class PlayerController extends ChangeNotifier {
     player.playerStateStream.listen((_) => _changed());
     player.shuffleModeEnabledStream.listen((_) => _changed());
     player.loopModeStream.listen((_) => _changed());
+    player.positionStream.listen(_trackPlays);
+  }
+
+  // A song counts as played once it has run for 30 s (or half of a short one).
+  String? _countKey;
+  bool _counted = false;
+
+  void _trackPlays(Duration pos) {
+    final path = currentPath;
+    if (path == null) return;
+    final key = '$path#${player.currentIndex}';
+    if (key != _countKey) {
+      _countKey = key;
+      _counted = false;
+    }
+    // Replaying the same song (repeat one / seek to start) counts again.
+    if (_counted && pos < const Duration(seconds: 2)) _counted = false;
+    if (_counted) return;
+    final dur = player.duration;
+    final threshold = dur != null && dur < const Duration(seconds: 60)
+        ? dur ~/ 2
+        : const Duration(seconds: 30);
+    if (pos >= threshold) {
+      _counted = true;
+      PlaylistService.instance.countPlay(path);
+    }
   }
   static final instance = PlayerController._();
 

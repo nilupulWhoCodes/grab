@@ -18,6 +18,46 @@ class VideoInfo {
   final String thumbnailUrl;
 }
 
+/// Song title/artist guessed from a YouTube title and channel name.
+class TagGuess {
+  const TagGuess(this.title, this.artist);
+  final String title;
+  final String artist;
+
+  static final _noise = RegExp(
+    r'\s*[\(\[【]\s*(official\s*)?(music\s*|lyrics?\s*|visuali[sz]er\s*|audio\s*|hd\s*|hq\s*|4k\s*|video\s*|mv\s*|m/v\s*|clip\s*officiel\s*)+[\)\]】]',
+    caseSensitive: false,
+  );
+
+  static String _tidy(String s) => s
+      .replaceAll(_noise, '')
+      .replaceAll(RegExp(r'\s*\|.*$'), '') // "Song | Album name"
+      .replaceAll(RegExp(r'^["“”]+|["“”]+$'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  static String _cleanChannel(String c) => c
+      .replaceAll(RegExp(r'\s*-\s*Topic$', caseSensitive: false), '')
+      .replaceAll(RegExp(r'VEVO$'), '')
+      .replaceAll(RegExp(r'\s*(Official)?\s*$', caseSensitive: false), '')
+      .trim();
+
+  /// "Artist - Song (Official Video)" → (Song, Artist); otherwise the
+  /// channel name is used as the artist.
+  static TagGuess from(String videoTitle, String channel) {
+    final cleaned = _tidy(videoTitle);
+    final m = RegExp(r'^(.+?)\s+[-–—]\s+(.+)$').firstMatch(cleaned);
+    if (m != null) {
+      final artist = m.group(1)!.trim();
+      final title = _tidy(m.group(2)!);
+      if (artist.isNotEmpty && title.isNotEmpty) return TagGuess(title, artist);
+    }
+    final artist = _cleanChannel(channel);
+    return TagGuess(cleaned.isEmpty ? videoTitle : cleaned,
+        artist.isEmpty ? channel : artist);
+  }
+}
+
 /// One downloadable source for a video's audio.
 class AudioCandidate {
   const AudioCandidate({

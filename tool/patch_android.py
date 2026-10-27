@@ -23,6 +23,7 @@ permissions = """
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 """
 
 # Background playback + lock-screen controls (audio_service, used by
@@ -42,7 +43,7 @@ audio_service = """
             </intent-filter>
         </receiver>
 """
-if "READ_MEDIA_AUDIO" not in text:
+if "REQUEST_INSTALL_PACKAGES" not in text:
     text = re.sub(r"(<manifest[^>]*>)", r"\1" + permissions, text, count=1)
 
 text = re.sub(r'android:label="[^"]*"', 'android:label="Grab"', text, count=1)
@@ -102,6 +103,37 @@ gradle = app / "build.gradle"
 if gradle_kts.exists():
     g = gradle_kts.read_text(encoding="utf-8")
     g = re.sub(r"minSdk\s*=\s*[^\n]+", "minSdk = 24", g, count=1)
+    # Permanent release key (android/key.properties is written by CI from
+    # GitHub secrets). Without it, builds fall back to a temporary debug key.
+    if 'create("release")' not in g:
+        signing = '''
+    signingConfigs {
+        create("release") {
+            val keyProps = java.util.Properties()
+            val keyFile = rootProject.file("key.properties")
+            if (keyFile.exists()) keyFile.inputStream().use { keyProps.load(it) }
+            keyProps.getProperty("storeFile")?.let { storeFile = file(it) }
+            storePassword = keyProps.getProperty("storePassword")
+            keyAlias = keyProps.getProperty("keyAlias")
+            keyPassword = keyProps.getProperty("keyPassword")
+            storeType = "PKCS12"
+        }
+    }
+
+'''
+        if "    buildTypes {" not in g:
+            sys.exit("buildTypes block not found in build.gradle.kts")
+        g = g.replace("    buildTypes {", signing.lstrip("\n") + "    buildTypes {", 1)
+        new_g = re.sub(
+            r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)',
+            'signingConfig = if (rootProject.file("key.properties").exists()) '
+            'signingConfigs.getByName("release") else signingConfigs.getByName("debug")',
+            g,
+            count=1,
+        )
+        if new_g == g:
+            sys.exit("release signingConfig line not found in build.gradle.kts")
+        g = new_g
     gradle_kts.write_text(g, encoding="utf-8")
 elif gradle.exists():
     g = gradle.read_text(encoding="utf-8")

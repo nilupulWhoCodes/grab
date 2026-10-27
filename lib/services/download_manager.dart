@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'library_service.dart';
+import 'playlist_service.dart';
 import 'storage_service.dart';
 import 'youtube_service.dart';
 
@@ -18,11 +19,15 @@ class DownloadTask {
     required this.info,
     required this.bitrate,
     required this.fileName,
+    required this.tagTitle,
+    required this.tagArtist,
   });
 
   final VideoInfo info;
   final int bitrate;
   final String fileName;
+  final String tagTitle;
+  final String tagArtist;
 
   TaskStatus status = TaskStatus.queued;
   double progress = 0; // 0..1
@@ -92,15 +97,29 @@ class DownloadManager extends ChangeNotifier {
     required VideoInfo info,
     required int bitrate,
     required String fileName,
+    required String tagTitle,
+    required String tagArtist,
   }) {
-    tasks.add(DownloadTask(info: info, bitrate: bitrate, fileName: fileName));
+    tasks.add(DownloadTask(
+      info: info,
+      bitrate: bitrate,
+      fileName: fileName,
+      tagTitle: tagTitle,
+      tagArtist: tagArtist,
+    ));
     notifyListeners();
     _pump();
   }
 
   void retry(DownloadTask t) {
     tasks.remove(t);
-    enqueue(info: t.info, bitrate: t.bitrate, fileName: t.fileName);
+    enqueue(
+      info: t.info,
+      bitrate: t.bitrate,
+      fileName: t.fileName,
+      tagTitle: t.tagTitle,
+      tagArtist: t.tagArtist,
+    );
   }
 
   void dismiss(DownloadTask t) {
@@ -129,6 +148,7 @@ class DownloadManager extends ChangeNotifier {
       await f.delete();
     } catch (_) {}
     LibraryService.instance.removeFile(f.path);
+    PlaylistService.instance.forget(f.path);
     await refreshLibrary();
   }
 
@@ -154,6 +174,7 @@ class DownloadManager extends ChangeNotifier {
 
   Future<void> _run(DownloadTask t) async {
     File? tmp;
+    File? cover;
     try {
       await StorageService.instance.ensurePermission();
       if (t._cancelled) throw _Cancelled();
@@ -205,7 +226,12 @@ class DownloadManager extends ChangeNotifier {
       _notifyIfActive(t);
 
       final out = await StorageService.instance.uniqueFile(t.fileName);
-      final converted = await _convert(t, tmp, out);
+      cover = await _downloadCover(t, tmpDir);
+      var converted = await _convert(t, tmp, out, cover);
+      if (!converted && cover != null && !t._cancelled) {
+        // Retry without cover art if embedding it was the problem.
+        converted = await _convert(t, tmp, out, null);
+      }
       if (t._cancelled) throw _Cancelled();
       if (!converted) throw Exception('Converting to MP3 failed.');
 
@@ -230,11 +256,46 @@ class DownloadManager extends ChangeNotifier {
     } finally {
       t._http = null;
       t._ffmpegSessionId = null;
-      try {
-        if (tmp != null && await tmp.exists()) await tmp.delete();
-      } catch (_) {}
+      for (final f in [tmp, cover]) {
+        try {
+          if (f != null && await f.exists()) await f.delete();
+        } catch (_) {}
+      }
       notifyListeners();
     }
+  }
+
+  /// Best available video thumbnail, used as the MP3's cover art.
+  Future<File?> _downloadCover(DownloadTask t, Directory tmpDir) async {
+    final id = t.info.id;
+    final urls = [
+      'https://i.ytimg.com/vi/$id/maxresdefault.jpg',
+      'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      t.info.thumbnailUrl,
+    ];
+    final client = HttpClient()..connectionTimeout = _connectTimeout;
+    try {
+      for (final u in urls) {
+        try {
+          final req = await client.getUrl(Uri.parse(u)).timeout(_idleTimeout);
+          final res = await req.close().timeout(_idleTimeout);
+          if (res.statusCode != 200) {
+            res.drain<void>().catchError((_) {});
+            continue;
+          }
+          final bytes = await res
+              .fold<List<int>>(<int>[], (a, b) => a..addAll(b))
+              .timeout(_idleTimeout);
+          if (bytes.length < 2048) continue; // placeholder image
+          final f = File('${tmpDir.path}/${id}_cover.jpg');
+          await f.writeAsBytes(bytes, flush: true);
+          return f;
+        } catch (_) {}
+      }
+    } finally {
+      client.close(force: true);
+    }
+    return null;
   }
 
   /// Downloads [source] into [dest] in ranged chunks, failing fast on HTTP
@@ -296,18 +357,29 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
-  Future<bool> _convert(DownloadTask t, File input, File out) async {
+  Future<bool> _convert(
+      DownloadTask t, File input, File out, File? cover) async {
     final done = Completer<bool>();
     final durationMs = t.info.duration?.inMilliseconds ?? 0;
     final args = [
       '-y',
       '-i', input.path,
-      '-vn',
+      if (cover != null) ...['-i', cover.path],
+      '-map', '0:a:0',
+      if (cover != null) ...['-map', '1:0'],
       '-c:a', 'libmp3lame',
       '-b:a', '${t.bitrate}k',
+      if (cover != null) ...[
+        '-c:v', 'copy',
+        '-disposition:v', 'attached_pic',
+        '-metadata:s:v', 'title=Album cover',
+        '-metadata:s:v', 'comment=Cover (front)',
+      ],
       '-id3v2_version', '3',
-      '-metadata', 'title=${t.info.title}',
-      '-metadata', 'artist=${t.info.author}',
+      '-metadata', 'title=${t.tagTitle}',
+      '-metadata', 'artist=${t.tagArtist}',
+      '-metadata', 'album_artist=${t.tagArtist}',
+      '-metadata', 'comment=youtube.com/watch?v=${t.info.id}',
       out.path,
     ];
     final session = await FFmpegKit.executeWithArgumentsAsync(

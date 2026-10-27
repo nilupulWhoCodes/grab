@@ -6,6 +6,8 @@ import '../services/player_controller.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
 import '../widgets/art_thumb.dart';
+import '../widgets/update_ui.dart';
+import 'playlists_view.dart';
 
 String _mb(int bytes) => '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 
@@ -19,6 +21,7 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   final _search = TextEditingController();
+  int _tab = 0; // 0 = Songs, 1 = Playlists
 
   @override
   void initState() {
@@ -68,6 +71,11 @@ class _LibraryPageState extends State<LibraryPage> {
                             fontSize: 15, color: AppColors.muted)),
                   const Spacer(),
                   IconButton(
+                    tooltip: 'About & updates',
+                    onPressed: () => showAboutSheet(context),
+                    icon: const Icon(Icons.info_outline_rounded),
+                  ),
+                  IconButton(
                     tooltip: 'Rescan storage',
                     onPressed: lib.state == LibraryState.scanning
                         ? null
@@ -77,7 +85,27 @@ class _LibraryPageState extends State<LibraryPage> {
                 ],
               ),
             ),
-            if (lib.state == LibraryState.noPermission)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Row(
+                children: [
+                  _SortChip(
+                    label: 'Songs',
+                    selected: _tab == 0,
+                    onTap: () => setState(() => _tab = 0),
+                  ),
+                  const SizedBox(width: 8),
+                  _SortChip(
+                    label: 'Playlists',
+                    selected: _tab == 1,
+                    onTap: () => setState(() => _tab = 1),
+                  ),
+                ],
+              ),
+            ),
+            if (_tab == 1)
+              const Expanded(child: PlaylistsView())
+            else if (lib.state == LibraryState.noPermission)
               Expanded(child: _PermissionPrompt(onAllow: _allowAccess))
             else ...[
               Padding(
@@ -237,7 +265,6 @@ class _SongRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = PlayerController.instance;
     final subtitle = [song.artist, song.album]
         .where((s) => s != null && s.isNotEmpty)
         .join(' · ');
@@ -296,16 +323,7 @@ class _SongRow extends StatelessWidget {
                 ],
               ),
             ),
-            SongMenu(
-              onPlayNext: () {
-                p.playNext(song.path);
-                showQueuedSnack(context, 'Playing next: ${song.title}');
-              },
-              onAddToQueue: () {
-                p.addToQueue(song.path);
-                showQueuedSnack(context, 'Added to queue: ${song.title}');
-              },
-            ),
+            SongMenu(path: song.path),
           ],
         ),
       ),

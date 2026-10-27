@@ -44,18 +44,22 @@ class _DownloadSheetState extends State<_DownloadSheet> {
   ];
 
   late final Future<VideoInfo> _info;
-  final _name = TextEditingController();
+  final _title = TextEditingController();
+  final _artist = TextEditingController();
   int _bitrate = 192;
   String _saveLabel = 'Music / Grab';
-  bool _nameTouched = false;
+  bool _touched = false;
 
   @override
   void initState() {
     super.initState();
     _info = YoutubeService.instance.info(widget.videoId);
     _info.then((v) {
-      if (mounted && !_nameTouched) {
-        _name.text = StorageService.sanitizeFileName(v.title);
+      if (mounted && !_touched) {
+        final guess = TagGuess.from(v.title, v.author);
+        _title.text = guess.title;
+        _artist.text = guess.artist;
+        setState(() {});
       }
     }).catchError((_) {});
     StorageService.instance.label().then((l) {
@@ -65,9 +69,37 @@ class _DownloadSheetState extends State<_DownloadSheet> {
 
   @override
   void dispose() {
-    _name.dispose();
+    _title.dispose();
+    _artist.dispose();
     super.dispose();
   }
+
+  String get _fileName {
+    final t = _title.text.trim();
+    final a = _artist.text.trim();
+    if (t.isEmpty) return a;
+    return a.isEmpty ? t : '$a - $t';
+  }
+
+  InputDecoration _field(String label) => InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: AppColors.sub),
+        isDense: true,
+        filled: true,
+        fillColor: AppColors.bg,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.accent),
+        ),
+      );
 
   String _estimate(Duration? d) {
     if (d == null) return 'kbps';
@@ -76,10 +108,16 @@ class _DownloadSheetState extends State<_DownloadSheet> {
   }
 
   void _start(VideoInfo info) {
+    final guess = TagGuess.from(info.title, info.author);
+    final title = _title.text.trim().isEmpty ? guess.title : _title.text.trim();
+    final artist =
+        _artist.text.trim().isEmpty ? guess.artist : _artist.text.trim();
     DownloadManager.instance.enqueue(
       info: info,
       bitrate: _bitrate,
-      fileName: _name.text.trim().isEmpty ? info.title : _name.text,
+      fileName: _fileName.isEmpty ? info.title : _fileName,
+      tagTitle: title,
+      tagArtist: artist,
     );
     Navigator.pop(context, true);
   }
@@ -134,29 +172,36 @@ class _DownloadSheetState extends State<_DownloadSheet> {
                           const TextStyle(fontSize: 12, color: AppColors.muted)),
                   const SizedBox(height: 20),
                   TextField(
-                    controller: _name,
-                    onChanged: (_) => _nameTouched = true,
+                    controller: _title,
+                    onChanged: (_) => setState(() => _touched = true),
+                    textCapitalization: TextCapitalization.words,
                     style: const TextStyle(fontSize: 15),
-                    decoration: InputDecoration(
-                      labelText: 'File name',
-                      labelStyle: const TextStyle(color: AppColors.sub),
-                      suffixText: '.mp3',
-                      suffixStyle: const TextStyle(color: AppColors.muted),
-                      filled: true,
-                      fillColor: AppColors.bg,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.border),
+                    decoration: _field('Title'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _artist,
+                    onChanged: (_) => setState(() => _touched = true),
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(fontSize: 15),
+                    decoration: _field('Artist'),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.image_outlined,
+                          size: 16, color: AppColors.muted),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Saved as "${StorageService.sanitizeFileName(_fileName)}.mp3" with cover art',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.muted),
+                        ),
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.border),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.accent),
-                      ),
-                    ),
+                    ],
                   ),
                   const SizedBox(height: 14),
                   Row(

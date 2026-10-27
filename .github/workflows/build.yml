@@ -31,6 +31,28 @@ jobs:
           rm -f test/widget_test.dart
           python3 tool/patch_android.py
 
+      # Permanent release key from repo secrets, so every build can be
+      # installed as an update over the previous one.
+      - name: Signing key
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.GRAB_KEYSTORE_BASE64 }}
+          KEYSTORE_PW: ${{ secrets.GRAB_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PW" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/app/grab-release.p12
+            {
+              echo "storeFile=grab-release.p12"
+              echo "storePassword=$KEYSTORE_PW"
+              echo "keyAlias=grab"
+              echo "keyPassword=$KEYSTORE_PW"
+            } > android/key.properties
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::GRAB_KEYSTORE_* secrets missing: using a temporary key. This build can't update an installed app and won't be published as a release."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Get packages
         run: flutter pub get
 
@@ -40,8 +62,14 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
+      # Version 1.0.<build> / build number <build>: the app compares this
+      # number with the latest release tag to offer updates.
       - name: Build APK
-        run: flutter build apk --release --split-per-abi
+        run: >
+          flutter build apk --release --split-per-abi
+          --build-name "1.0.${{ github.run_number }}"
+          --build-number "${{ github.run_number }}"
+          --dart-define=GRAB_BUILD=${{ github.run_number }}
 
       - name: Collect APKs
         id: collect
@@ -58,16 +86,22 @@ jobs:
           retention-days: 30
 
       # Easy install on the phone: Releases page of the repo.
+      # Only builds signed with the permanent key become releases (the app's
+      # updater installs the latest release).
       - name: Publish release
+        if: ${{ steps.signing.outputs.signed == 'true' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANGES: ${{ github.event.head_commit.message }}
         run: |
+          printf '%s\n\nInstall grab-arm64.apk on most phones (grab-armv7.apk for older 32-bit ones).\n' \
+            "${CHANGES:-New build}" > notes.md
           gh release create "v1.0.${{ github.run_number }}" out/*.apk \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "Grab build ${{ github.run_number }}" \
-            --notes "Install grab-arm64.apk on most phones (grab-armv7.apk for older 32-bit ones)." \
+            --title "Grab 1.0.${{ github.run_number }}" \
+            --notes-file notes.md \
             --latest
 
       # Copy of the latest APKs on the `apk` branch (fetchable with plain git).

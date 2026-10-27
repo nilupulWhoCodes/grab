@@ -75,6 +75,9 @@ class LibraryService extends ChangeNotifier {
 
   Song? songFor(String path) => _byPath[path];
 
+  /// Every song, unfiltered and unsorted.
+  List<Song> get allSongs => List.unmodifiable(_songs);
+
   List<Song> get songs {
     final q = query.trim().toLowerCase();
     final list = q.isEmpty

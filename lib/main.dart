@@ -5,6 +5,9 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'pages/library_page.dart';
 import 'pages/mp3_page.dart';
 import 'services/download_manager.dart';
+import 'services/playlist_service.dart';
+import 'services/update_service.dart';
+import 'widgets/update_ui.dart';
 import 'theme.dart';
 import 'widgets/mini_player.dart';
 
@@ -22,6 +25,8 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
   DownloadManager.instance.refreshLibrary();
+  PlaylistService.instance.load();
+  UpdateService.instance.checkSoon();
   runApp(const GrabApp());
 }
 
@@ -82,6 +87,7 @@ class _HomeShellState extends State<HomeShell> {
         bottomNavigationBar: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const UpdateBanner(),
             const MiniPlayer(),
             _BottomNav(
               index: _tab,

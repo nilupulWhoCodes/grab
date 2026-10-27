@@ -23,3 +23,10 @@ test/
 # Misc
 .DS_Store
 out/
+
+# Signing material: never commit
+*.p12
+*.jks
+*.keystore
+key.properties
+grab-signing-secrets.txt
