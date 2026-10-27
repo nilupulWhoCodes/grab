@@ -109,7 +109,7 @@ if gradle_kts.exists():
         signing = '''
     signingConfigs {
         create("release") {
-            val keyProps = java.util.Properties()
+            val keyProps = Properties()
             val keyFile = rootProject.file("key.properties")
             if (keyFile.exists()) keyFile.inputStream().use { keyProps.load(it) }
             keyProps.getProperty("storeFile")?.let { storeFile = file(it) }
@@ -134,6 +134,10 @@ if gradle_kts.exists():
         if new_g == g:
             sys.exit("release signingConfig line not found in build.gradle.kts")
         g = new_g
+    # `java.util...` inside android {} resolves to Gradle's `java` extension,
+    # so import Properties at the top of the file instead.
+    if "import java.util.Properties" not in g:
+        g = "import java.util.Properties\n\n" + g
     gradle_kts.write_text(g, encoding="utf-8")
 elif gradle.exists():
     g = gradle.read_text(encoding="utf-8")
