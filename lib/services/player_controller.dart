@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'audio_fx.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';
+import 'settings_service.dart';
 import 'widget_service.dart';
 
 /// One shared player for the whole app (Music and MP3 parts), with an
@@ -20,6 +23,8 @@ class PlayerController extends ChangeNotifier {
     player.shuffleModeEnabledStream.listen((_) => _changed());
     player.loopModeStream.listen((_) => _changed());
     player.positionStream.listen(_trackPlays);
+    player.positionStream.listen(_applyCrossfade);
+    player.currentIndexStream.listen(_onIndexChanged);
   }
 
   // A song counts as played once it has run for 30 s (or half of a short one).
@@ -48,7 +53,65 @@ class PlayerController extends ChangeNotifier {
   }
   static final instance = PlayerController._();
 
-  final AudioPlayer player = AudioPlayer();
+  /// The equalizer sits in the player's audio pipeline.
+  final AudioPlayer player = AudioPlayer(
+    audioPipeline: AudioPipeline(androidAudioEffects: [AudioFx.equalizer]),
+  );
+
+  // --- Crossfade: fade out the end of a song, fade in the next one ----------
+
+  int? _lastIndex;
+  Duration _lastPos = Duration.zero;
+  bool _fadeIn = false;
+  double _volume = 1;
+
+  final _rand = math.Random();
+
+  void _onIndexChanged(int? index) {
+    final cf = SettingsService.instance.crossfadeSeconds;
+    // Only fade in when the previous song ran to its end (not a manual skip).
+    final endedNaturally = _lastIndex != null &&
+        index != _lastIndex &&
+        cf > 0 &&
+        _lastPos > Duration.zero &&
+        _lastPosNearEnd;
+    _fadeIn = endedNaturally;
+    _lastIndex = index;
+    if (!_fadeIn) _setVolume(1);
+  }
+
+  bool _lastPosNearEnd = false;
+
+  void _applyCrossfade(Duration pos) {
+    final cf = SettingsService.instance.crossfadeSeconds;
+    final dur = player.duration;
+    _lastPos = pos;
+    if (cf <= 0 || dur == null || dur.inMilliseconds <= 0) {
+      _lastPosNearEnd = false;
+      if (_volume != 1) _setVolume(1);
+      return;
+    }
+    final cfMs = cf * 1000;
+    final remaining = (dur - pos).inMilliseconds.toDouble();
+    _lastPosNearEnd = remaining < 1500;
+    final continues = player.hasNext || player.loopMode != LoopMode.off;
+    var v = 1.0;
+    // Long enough songs only, so short clips aren't swallowed by the fade.
+    if (dur.inMilliseconds > cfMs * 3) {
+      if (continues && remaining < cfMs) v = (remaining / cfMs).clamp(0.0, 1.0);
+      if (_fadeIn) {
+        final f = (pos.inMilliseconds / cfMs).clamp(0.0, 1.0);
+        if (f >= 1) _fadeIn = false;
+        v = v < f ? v : f;
+      }
+    }
+    if ((v - _volume).abs() > 0.02 || (v == 1 && _volume != 1)) _setVolume(v);
+  }
+
+  void _setVolume(double v) {
+    _volume = v;
+    player.setVolume(v < 0.05 ? 0.05 : v);
+  }
   bool _askedNotifications = false;
 
   void _changed() {
@@ -158,10 +221,43 @@ class PlayerController extends ChangeNotifier {
       );
       if (shuffleAll) await player.shuffle();
       player.play();
+      AudioFx.apply(); // equalizer settings, once the player has loaded
     } catch (_) {
       await stop();
     }
     _changed();
+  }
+
+  /// Shake to shuffle: jump to a random (enabled) song. Returns its title.
+  Future<String?> shuffleJump() async {
+    final lists = PlaylistService.instance;
+    final seq = queue;
+    final cur = currentIndex;
+    final options = [
+      for (var i = 0; i < seq.length; i++)
+        if (i != cur && !lists.isDisabled(seq[i].id)) i,
+    ];
+    if (options.isNotEmpty) {
+      final i = options[_rand.nextInt(options.length)];
+      await jumpTo(i);
+      return seq[i].title;
+    }
+    // Nothing else queued: shuffle the whole library.
+    final all = lists.playable(LibraryService.instance.songs.map((s) => s.path));
+    if (all.isEmpty) return null;
+    final pick = all[_rand.nextInt(all.length)];
+    try {
+      await player.setShuffleModeEnabled(true);
+      await player.setAudioSources([for (final p in all) _source(p)],
+          initialIndex: all.indexOf(pick));
+      await player.shuffle();
+      player.play();
+      AudioFx.apply();
+    } catch (_) {
+      await stop();
+    }
+    _changed();
+    return currentTitle;
   }
 
   Future<void> shuffleAll(List<String> queue) async {

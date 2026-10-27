@@ -8,8 +8,8 @@ import '../theme.dart';
 import '../services/playlist_service.dart';
 import '../widgets/art_thumb.dart';
 import '../widgets/playing_bars.dart';
-import '../widgets/update_ui.dart';
 import 'playlists_view.dart';
+import 'settings_page.dart';
 
 String _mb(int bytes) => '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 
@@ -77,9 +77,10 @@ class _LibraryPageState extends State<LibraryPage> {
                             fontSize: 15, color: AppColors.muted)),
                   const Spacer(),
                   IconButton(
-                    tooltip: 'About & updates',
-                    onPressed: () => showAboutSheet(context),
-                    icon: const Icon(Icons.info_outline_rounded),
+                    tooltip: 'Settings',
+                    onPressed: () =>
+                        Navigator.of(context).push(SettingsPage.route()),
+                    icon: const Icon(Icons.settings_outlined),
                   ),
                   IconButton(
                     tooltip: 'Rescan storage',

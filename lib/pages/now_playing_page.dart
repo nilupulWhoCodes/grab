@@ -3,8 +3,12 @@ import 'package:just_audio/just_audio.dart';
 
 import '../services/player_controller.dart';
 import '../services/playlist_service.dart';
+import '../services/settings_service.dart';
 import '../theme.dart';
+import '../widgets/art_backdrop.dart';
 import '../widgets/art_thumb.dart';
+import '../widgets/lyrics_view.dart';
+import '../widgets/visualizer.dart';
 import '../widgets/mini_player.dart' show formatTime;
 import 'queue_page.dart';
 
@@ -31,6 +35,7 @@ class NowPlayingPage extends StatefulWidget {
 class _NowPlayingPageState extends State<NowPlayingPage>
     with SingleTickerProviderStateMixin {
   double? _dragValue;
+  bool _showLyrics = false;
 
   // Drag down to collapse.
   double _dragY = 0;
@@ -93,6 +98,48 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     });
   }
 
+  /// Artwork (or lyrics) plus the visualizer.
+  Widget _artArea(
+      BuildContext context, PlayerController p, double side, Widget pager) {
+    final colors = ArtBackdrop.colorsOf(context);
+    final style = SettingsService.instance.visualizer;
+    final path = p.currentPath;
+    if (_showLyrics && path != null) {
+      return SizedBox(
+        width: side,
+        height: side + 44,
+        child: LyricsView(path: path, accent: colors.accent),
+      );
+    }
+    if (style == VisualizerStyle.off) return pager;
+    return VisualizerFeed(
+      builder: (context, bands, access, request) {
+        final needsAccess = access != VisualizerAccess.granted &&
+            access != VisualizerAccess.unavailable;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            style == VisualizerStyle.glow
+                ? VisualizerGlow(
+                    bands: bands, color: colors.glow, child: pager)
+                : pager,
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 44,
+              child: needsAccess
+                  ? VisualizerPrompt(
+                      onTap: request,
+                      denied: access == VisualizerAccess.denied)
+                  : style == VisualizerStyle.bars
+                      ? VisualizerBars(bands: bands, color: colors.glow)
+                      : null,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = PlayerController.instance;
@@ -111,7 +158,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
             opacity: 1 - progress * 0.35,
             child: Scaffold(
       backgroundColor: AppColors.bg,
-      body: SafeArea(
+      body: ArtBackdrop(
+      child: SafeArea(
         child: ListenableBuilder(
           listenable: p,
           builder: (context, _) {
@@ -139,6 +187,19 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                             style: sectionLabel),
                       ),
                       IconButton(
+                        tooltip: _showLyrics ? 'Show artwork' : 'Lyrics',
+                        onPressed: () =>
+                            setState(() => _showLyrics = !_showLyrics),
+                        icon: Icon(
+                          _showLyrics
+                              ? Icons.album_rounded
+                              : Icons.lyrics_outlined,
+                          color: _showLyrics
+                              ? ArtBackdrop.colorsOf(context).accent
+                              : null,
+                        ),
+                      ),
+                      IconButton(
                         tooltip: 'Up next',
                         onPressed: () =>
                             Navigator.of(context).push(QueuePage.route()),
@@ -154,65 +215,95 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                         .toList();
                     _syncPager(order, p.currentIndex);
                     final side = c.maxWidth;
-                    return SizedBox(
+                    final pager = SizedBox(
                       width: side,
                       height: side,
-                      child: PageView.builder(
-                        controller: _pager,
-                        itemCount: order.length,
-                        onPageChanged: (page) {
-                          if (_syncing || page >= order.length) return;
-                          _shownIndex = order[page];
-                          p.jumpTo(order[page]);
+                      // Change song only once the swipe has settled on a new
+                      // card, never mid-drag (dragging back cancels it).
+                      child: NotificationListener<ScrollEndNotification>(
+                        onNotification: (_) {
+                          final page = _pager.page?.round();
+                          if (!_syncing &&
+                              page != null &&
+                              page >= 0 &&
+                              page < order.length &&
+                              order[page] != p.currentIndex) {
+                            _shownIndex = order[page];
+                            p.jumpTo(order[page]);
+                          }
+                          return false;
                         },
-                        itemBuilder: (context, k) {
-                          final art = queue[order[k]].artUri?.toFilePath();
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: art == null
-                                ? Container(
-                                    decoration: BoxDecoration(
-                                      color: AppColors.surface,
-                                      borderRadius: BorderRadius.circular(28),
-                                      border:
-                                          Border.all(color: AppColors.line),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Container(
-                                      width: 120,
-                                      height: 120,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.selectedFill,
-                                        borderRadius:
-                                            BorderRadius.circular(60),
+                        child: PageView.builder(
+                          controller: _pager,
+                          physics: const _ArtSwipePhysics(),
+                          itemCount: order.length,
+                          itemBuilder: (context, k) {
+                            final item = queue[order[k]];
+                            final art = item.artUri?.toFilePath();
+                            return AnimatedBuilder(
+                              animation: _pager,
+                              builder: (context, child) {
+                                // Cards shrink a little as they slide away.
+                                final page = _pager.hasClients &&
+                                        _pager.position.haveDimensions
+                                    ? (_pager.page ?? k.toDouble())
+                                    : k.toDouble();
+                                final t = (1 - (page - k).abs()).clamp(0.0, 1.0);
+                                return Transform.scale(
+                                  scale: 0.9 + 0.1 * t,
+                                  child: Opacity(
+                                      opacity: 0.5 + 0.5 * t, child: child),
+                                );
+                              },
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                child: art == null
+                                    ? _NoArtCard(
+                                        title: item.title,
+                                        artist: item.artist ?? '')
+                                    : ArtThumb(
+                                        artPath: art,
+                                        size: side - 8,
+                                        radius: 28,
+                                        iconSize: 56,
                                       ),
-                                      child: const Icon(
-                                          Icons.music_note_rounded,
-                                          size: 56,
-                                          color: AppColors.accent),
-                                    ),
-                                  )
-                                : ArtThumb(
-                                    artPath: art,
-                                    size: side - 8,
-                                    radius: 28,
-                                    iconSize: 56,
-                                  ),
-                          );
-                        },
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     );
+                    return _artArea(context, p, side, pager);
                   }),
                   const Spacer(),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Text(
-                          p.currentTitle ?? '',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: displayStyle(24, weight: FontWeight.w600),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 280),
+                          transitionBuilder: (child, anim) => FadeTransition(
+                            opacity: anim,
+                            child: SlideTransition(
+                              position: Tween(
+                                      begin: const Offset(0, 0.25),
+                                      end: Offset.zero)
+                                  .animate(anim),
+                              child: child,
+                            ),
+                          ),
+                          layoutBuilder: (current, previous) => Stack(
+                            alignment: Alignment.topLeft,
+                            children: [...previous, if (current != null) current],
+                          ),
+                          child: Text(
+                            p.currentTitle ?? '',
+                            key: ValueKey(p.currentPath),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: displayStyle(24, weight: FontWeight.w600),
+                          ),
                         ),
                       ),
                       ListenableBuilder(
@@ -278,10 +369,12 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                           SliderTheme(
                             data: SliderTheme.of(context).copyWith(
                               trackHeight: 4,
-                              activeTrackColor: AppColors.accent,
+                              activeTrackColor: ArtBackdrop.colorsOf(context).accent,
                               inactiveTrackColor: AppColors.placeholder,
-                              thumbColor: AppColors.accent,
-                              overlayColor: const Color(0x33D4FF4F),
+                              thumbColor: ArtBackdrop.colorsOf(context).accent,
+                              overlayColor: ArtBackdrop.colorsOf(context)
+                                  .accent
+                                  .withValues(alpha: 0.2),
                             ),
                             child: Slider(
                               min: 0,
@@ -418,9 +511,78 @@ class _NowPlayingPageState extends State<NowPlayingPage>
           },
         ),
       ),
+      ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+
+/// Swipes need a real drag or flick (a nudge snaps back).
+class _ArtSwipePhysics extends PageScrollPhysics {
+  const _ArtSwipePhysics({super.parent});
+
+  @override
+  _ArtSwipePhysics applyTo(ScrollPhysics? ancestor) =>
+      _ArtSwipePhysics(parent: buildParent(ancestor));
+
+  @override
+  double get minFlingVelocity => 600;
+
+  @override
+  double get minFlingDistance => 40;
+}
+
+/// Card for songs without cover art: shows the title so swiping is visible.
+class _NoArtCard extends StatelessWidget {
+  const _NoArtCard({required this.title, required this.artist});
+  final String title;
+  final String artist;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ArtBackdrop.colorsOf(context);
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: AppColors.line),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.surface2, AppColors.surface],
+        ),
+      ),
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              color: AppColors.selectedFill,
+              borderRadius: BorderRadius.circular(48),
+            ),
+            child: Icon(Icons.music_note_rounded, size: 48, color: colors.accent),
+          ),
+          const SizedBox(height: 20),
+          Text(title,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: displayStyle(22, weight: FontWeight.w600)),
+          if (artist.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(artist,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppColors.muted, fontSize: 15)),
+          ],
+        ],
       ),
     );
   }

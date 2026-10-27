@@ -5,7 +5,10 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'pages/library_page.dart';
 import 'pages/mp3_page.dart';
 import 'services/download_manager.dart';
+import 'services/player_controller.dart';
 import 'services/playlist_service.dart';
+import 'services/settings_service.dart';
+import 'services/shake_service.dart';
 import 'services/update_service.dart';
 import 'widgets/update_ui.dart';
 import 'theme.dart';
@@ -24,11 +27,15 @@ Future<void> main() async {
     systemNavigationBarColor: AppColors.bg,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+  await SettingsService.instance.load();
   DownloadManager.instance.refreshLibrary();
   PlaylistService.instance.load();
   UpdateService.instance.checkSoon();
   runApp(const GrabApp());
 }
+
+/// Lets services (e.g. shake to shuffle) show a snackbar anywhere.
+final messengerKey = GlobalKey<ScaffoldMessengerState>();
 
 class GrabApp extends StatelessWidget {
   const GrabApp({super.key});
@@ -37,6 +44,7 @@ class GrabApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Grab',
+      scaffoldMessengerKey: messengerKey,
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       home: const HomeShell(),
@@ -51,9 +59,53 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _tab = 0; // open on the music player
   final _mp3Key = GlobalKey<Mp3PageState>();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    ShakeService.instance.onShake = _onShake;
+    _updateShake();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Shake detection only runs while Grab is open on screen.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => _updateShake(
+      foreground: state == AppLifecycleState.resumed);
+
+  void _updateShake({bool foreground = true}) {
+    if (foreground && SettingsService.instance.shakeToShuffle) {
+      ShakeService.instance.start();
+    } else {
+      ShakeService.instance.stop();
+    }
+  }
+
+  Future<void> _onShake() async {
+    final title = await PlayerController.instance.shuffleJump();
+    if (title == null) return;
+    messengerKey.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.shuffle_rounded, color: AppColors.accent, size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Shuffled: $title')),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+      ));
+  }
 
   Future<void> _onBack() async {
     if (_tab == 1 && (await _mp3Key.currentState?.handleBack() ?? false)) {

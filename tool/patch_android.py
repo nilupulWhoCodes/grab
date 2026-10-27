@@ -24,6 +24,8 @@ permissions = """
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 """
 
 # Background playback + lock-screen controls (audio_service, used by
@@ -92,8 +94,14 @@ for act in activities:
     package = re.search(r"^package\s+([\w.]+)", src, re.M).group(1)
     act.write_text(
         f"package {package}\n\n"
-        "import com.ryanheise.audioservice.AudioServiceActivity\n\n"
-        "class MainActivity : AudioServiceActivity()\n",
+        "import com.ryanheise.audioservice.AudioServiceActivity\n"
+        "import io.flutter.embedding.engine.FlutterEngine\n\n"
+        "class MainActivity : AudioServiceActivity() {\n"
+        "    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {\n"
+        "        super.configureFlutterEngine(flutterEngine)\n"
+        "        GrabAudioFx.register(flutterEngine)\n"
+        "    }\n"
+        "}\n",
         encoding="utf-8",
     )
 
