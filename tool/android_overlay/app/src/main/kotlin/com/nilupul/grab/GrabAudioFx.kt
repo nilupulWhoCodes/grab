@@ -1,10 +1,12 @@
 package com.nilupul.grab
 
+import android.media.audiofx.PresetReverb
 import android.media.audiofx.Visualizer
 import android.os.Handler
 import android.os.Looper
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodChannel
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.log10
@@ -13,9 +15,49 @@ import kotlin.math.pow
 
 /** Native audio helpers for the Flutter side (registered from MainActivity). */
 object GrabAudioFx {
+    private var reverb: PresetReverb? = null
+    private var reverbSession = 0
+
     fun register(engine: FlutterEngine) {
         EventChannel(engine.dartExecutor.binaryMessenger, "grab/visualizer")
             .setStreamHandler(VisualizerHandler())
+        MethodChannel(engine.dartExecutor.binaryMessenger, "grab/reverb")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "set") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val session = call.argument<Int>("session") ?: 0
+                val preset = call.argument<Int>("preset") ?: 0
+                try {
+                    if (preset <= 0 || session <= 0) {
+                        releaseReverb()
+                    } else {
+                        if (reverb == null || reverbSession != session) {
+                            releaseReverb()
+                            // Insert effect on the player's own audio session.
+                            reverb = PresetReverb(0, session)
+                            reverbSession = session
+                        }
+                        reverb!!.preset = preset.toShort()
+                        reverb!!.enabled = true
+                    }
+                    result.success(true)
+                } catch (e: Exception) {
+                    releaseReverb()
+                    result.error("reverb", e.message ?: "Reverb not supported", null)
+                }
+            }
+    }
+
+    private fun releaseReverb() {
+        try {
+            reverb?.enabled = false
+            reverb?.release()
+        } catch (_: Exception) {
+        }
+        reverb = null
+        reverbSession = 0
     }
 }
 

@@ -19,6 +19,32 @@ extension EqPresetLabel on EqPreset {
       };
 }
 
+enum FxMode { normal, nightcore, slowedReverb, custom }
+
+extension FxModeLabel on FxMode {
+  String get label => switch (this) {
+        FxMode.normal => 'Normal',
+        FxMode.nightcore => 'Nightcore',
+        FxMode.slowedReverb => 'Slowed + reverb',
+        FxMode.custom => 'Custom',
+      };
+}
+
+/// Android PresetReverb presets (same order as the platform constants).
+enum ReverbPreset { none, smallRoom, mediumRoom, largeRoom, mediumHall, largeHall, plate }
+
+extension ReverbLabel on ReverbPreset {
+  String get label => switch (this) {
+        ReverbPreset.none => 'None',
+        ReverbPreset.smallRoom => 'Small room',
+        ReverbPreset.mediumRoom => 'Medium room',
+        ReverbPreset.largeRoom => 'Large room',
+        ReverbPreset.mediumHall => 'Medium hall',
+        ReverbPreset.largeHall => 'Large hall',
+        ReverbPreset.plate => 'Plate',
+      };
+}
+
 /// App settings, saved on the phone.
 class SettingsService extends ChangeNotifier {
   SettingsService._();
@@ -33,6 +59,15 @@ class SettingsService extends ChangeNotifier {
   bool eqEnabled = false;
   EqPreset eqPreset = EqPreset.flat;
   List<double> eqCustomGains = [];
+
+  // Sound modes (speed / pitch / reverb).
+  FxMode fxMode = FxMode.normal;
+  double speed = 1;
+  double pitch = 1;
+  bool linkPitch = true;
+  ReverbPreset reverb = ReverbPreset.none;
+
+  double get effectivePitch => linkPitch ? speed : pitch;
 
   Timer? _saveTimer;
 
@@ -57,6 +92,13 @@ class SettingsService extends ChangeNotifier {
       eqCustomGains = ((j['eqCustom'] as List?) ?? [])
           .map((e) => (e as num).toDouble())
           .toList();
+      fxMode = FxMode.values.firstWhere((v) => v.name == j['fxMode'],
+          orElse: () => FxMode.normal);
+      speed = (j['speed'] as num?)?.toDouble() ?? 1;
+      pitch = (j['pitch'] as num?)?.toDouble() ?? 1;
+      linkPitch = j['linkPitch'] as bool? ?? true;
+      reverb = ReverbPreset.values.firstWhere((v) => v.name == j['reverb'],
+          orElse: () => ReverbPreset.none);
     } catch (_) {
       // First run: defaults.
     }
@@ -77,6 +119,11 @@ class SettingsService extends ChangeNotifier {
           'eqEnabled': eqEnabled,
           'eqPreset': eqPreset.name,
           'eqCustom': eqCustomGains,
+          'fxMode': fxMode.name,
+          'speed': speed,
+          'pitch': pitch,
+          'linkPitch': linkPitch,
+          'reverb': reverb.name,
         }));
       } catch (_) {}
     });

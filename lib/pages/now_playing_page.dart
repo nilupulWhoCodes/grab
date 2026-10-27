@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../widgets/art_backdrop.dart';
 import '../widgets/art_thumb.dart';
 import '../widgets/lyrics_view.dart';
+import '../widgets/sound_sheet.dart';
 import '../widgets/visualizer.dart';
 import '../widgets/mini_player.dart' show formatTime;
 import 'queue_page.dart';
@@ -185,6 +186,21 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                         child: Text('Now playing',
                             textAlign: TextAlign.center,
                             style: sectionLabel),
+                      ),
+                      ListenableBuilder(
+                        listenable: SettingsService.instance,
+                        builder: (context, _) {
+                          final on = SettingsService.instance.fxMode !=
+                              FxMode.normal;
+                          return IconButton(
+                            tooltip: 'Speed, pitch & reverb',
+                            onPressed: () => showSoundSheet(context),
+                            icon: Icon(Icons.speed_rounded,
+                                color: on
+                                    ? ArtBackdrop.colorsOf(context).accent
+                                    : null),
+                          );
+                        },
                       ),
                       IconButton(
                         tooltip: _showLyrics ? 'Show artwork' : 'Lyrics',

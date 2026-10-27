@@ -9,6 +9,7 @@ import 'services/player_controller.dart';
 import 'services/playlist_service.dart';
 import 'services/settings_service.dart';
 import 'services/shake_service.dart';
+import 'services/sound_fx.dart';
 import 'services/update_service.dart';
 import 'widgets/update_ui.dart';
 import 'theme.dart';
@@ -28,6 +29,7 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
   await SettingsService.instance.load();
+  SoundFx.init();
   DownloadManager.instance.refreshLibrary();
   PlaylistService.instance.load();
   UpdateService.instance.checkSoon();

@@ -11,6 +11,7 @@ import 'audio_fx.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';
 import 'settings_service.dart';
+import 'sound_fx.dart';
 import 'widget_service.dart';
 
 /// One shared player for the whole app (Music and MP3 parts), with an
@@ -222,6 +223,7 @@ class PlayerController extends ChangeNotifier {
       if (shuffleAll) await player.shuffle();
       player.play();
       AudioFx.apply(); // equalizer settings, once the player has loaded
+      SoundFx.apply(); // speed / pitch / reverb
     } catch (_) {
       await stop();
     }
@@ -253,6 +255,7 @@ class PlayerController extends ChangeNotifier {
       await player.shuffle();
       player.play();
       AudioFx.apply();
+      SoundFx.apply();
     } catch (_) {
       await stop();
     }
