@@ -67,6 +67,9 @@ class SongMenu extends StatelessWidget {
     final lists = PlaylistService.instance;
     final title = PlayerController.titleOf(path);
     final fav = lists.isFavourite(path);
+    final off = lists.isDisabled(path);
+    final folderOff = lists.isFolderDisabled(path);
+    final folder = PlaylistService.folderName(path);
 
     PopupMenuItem<String> item(String value, IconData icon, String label) =>
         PopupMenuItem(
@@ -97,6 +100,22 @@ class SongMenu extends StatelessWidget {
                 fav ? 'Removed from Favourites' : 'Added to Favourites');
           case 'playlist':
             showAddToPlaylistSheet(context, path);
+          case 'disable':
+            lists.setDisabled(path, true);
+            p.dropDisabled();
+            showUndoSnack(context, 'Disabled: $title',
+                () => lists.setDisabled(path, false));
+          case 'enable':
+            lists.setDisabled(path, false);
+            showQueuedSnack(context, 'Enabled: $title');
+          case 'disableFolder':
+            lists.setFolderDisabled(path, true);
+            p.dropDisabled();
+            showUndoSnack(context, 'Disabled every song in "$folder"',
+                () => lists.setFolderDisabled(path, false));
+          case 'enableFolder':
+            lists.setFolderDisabled(path, false);
+            showQueuedSnack(context, 'Enabled every song in "$folder"');
           case 'remove':
             onRemoveFromPlaylist?.call();
           case 'delete':
@@ -104,11 +123,23 @@ class SongMenu extends StatelessWidget {
         }
       },
       itemBuilder: (_) => [
-        item('next', Icons.playlist_play_rounded, 'Play next'),
-        item('queue', Icons.queue_music_rounded, 'Add to queue'),
+        if (!off) ...[
+          item('next', Icons.playlist_play_rounded, 'Play next'),
+          item('queue', Icons.queue_music_rounded, 'Add to queue'),
+        ],
         item('fav', fav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
             fav ? 'Remove from Favourites' : 'Add to Favourites'),
         item('playlist', Icons.playlist_add_rounded, 'Add to playlist…'),
+        if (off)
+          item('enable', Icons.check_circle_outline_rounded, 'Enable song')
+        else
+          item('disable', Icons.block_rounded, 'Disable song'),
+        if (folderOff)
+          item('enableFolder', Icons.folder_open_rounded,
+              'Enable folder "$folder"')
+        else
+          item('disableFolder', Icons.folder_off_outlined,
+              'Disable folder "$folder"'),
         if (onRemoveFromPlaylist != null)
           item('remove', Icons.playlist_remove_rounded, 'Remove from playlist'),
         if (onDelete != null)
@@ -214,6 +245,73 @@ Future<String?> askPlaylistName(BuildContext context,
       ],
     ),
   );
+}
+
+void showUndoSnack(BuildContext context, String text, VoidCallback undo) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      content: Text(text),
+      duration: const Duration(seconds: 4),
+      action: SnackBarAction(
+        label: 'Undo',
+        textColor: AppColors.accent,
+        onPressed: undo,
+      ),
+    ));
+}
+
+/// Tapping a disabled song: explain, and offer to switch it back on.
+void showDisabledSnack(BuildContext context, String path) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      content: const Text('This song is disabled, so it won\'t play.'),
+      duration: const Duration(seconds: 4),
+      action: SnackBarAction(
+        label: 'Enable',
+        textColor: AppColors.accent,
+        onPressed: () => PlaylistService.instance.setDisabled(path, false),
+      ),
+    ));
+}
+
+/// Greys out a disabled song's row.
+class DisabledFade extends StatelessWidget {
+  const DisabledFade({super.key, required this.disabled, required this.child});
+  final bool disabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      Opacity(opacity: disabled ? 0.4 : 1, child: child);
+}
+
+/// Small "Disabled" tag shown next to a disabled song's details.
+class DisabledTag extends StatelessWidget {
+  const DisabledTag({super.key});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.muted),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.block_rounded, size: 11, color: AppColors.sub),
+            SizedBox(width: 3),
+            Text('Disabled',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.sub,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
 }
 
 void showQueuedSnack(BuildContext context, String text) {

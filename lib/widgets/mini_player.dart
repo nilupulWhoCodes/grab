@@ -13,8 +13,25 @@ String formatTime(Duration d) {
 }
 
 /// Compact player shown above the bottom bar on every tab.
-class MiniPlayer extends StatelessWidget {
+/// Tap or swipe up to open Now Playing.
+class MiniPlayer extends StatefulWidget {
   const MiniPlayer({super.key});
+
+  @override
+  State<MiniPlayer> createState() => _MiniPlayerState();
+}
+
+class _MiniPlayerState extends State<MiniPlayer> {
+  double _drag = 0;
+  bool _opening = false;
+
+  void _open() {
+    if (_opening) return;
+    _opening = true;
+    Navigator.of(context)
+        .push(NowPlayingPage.route())
+        .whenComplete(() => _opening = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +41,16 @@ class MiniPlayer extends StatelessWidget {
       builder: (context, _) {
         if (p.currentItem == null) return const SizedBox.shrink();
         return GestureDetector(
-          onTap: () => Navigator.of(context).push(NowPlayingPage.route()),
+          onTap: _open,
+          onVerticalDragStart: (_) => _drag = 0,
+          onVerticalDragUpdate: (d) {
+            _drag += d.delta.dy;
+            if (_drag < -40) _open();
+          },
+          onVerticalDragEnd: (d) {
+            if ((d.primaryVelocity ?? 0) < -250) _open();
+            _drag = 0;
+          },
           child: Container(
             margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
             padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),

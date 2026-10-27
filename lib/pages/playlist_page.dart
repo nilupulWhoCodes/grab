@@ -5,6 +5,7 @@ import '../services/player_controller.dart';
 import '../services/playlist_service.dart';
 import '../theme.dart';
 import '../widgets/art_thumb.dart';
+import '../widgets/playing_bars.dart';
 
 /// One playlist: a smart one (Favourites, Most played, Recently added) or
 /// one of yours (rename, delete, reorder, remove songs).
@@ -139,9 +140,15 @@ class PlaylistPage extends StatelessWidget {
                     children: [
                       Expanded(
                         child: FilledButton.icon(
-                          onPressed: paths.isEmpty
+                          onPressed: PlaylistService.instance
+                                  .playable(paths)
+                                  .isEmpty
                               ? null
-                              : () => p.play(paths.first, paths),
+                              : () {
+                                  final ok = PlaylistService.instance
+                                      .playable(paths);
+                                  p.play(ok.first, ok);
+                                },
                           style: FilledButton.styleFrom(
                             backgroundColor: AppColors.accent,
                             foregroundColor: AppColors.bg,
@@ -159,8 +166,11 @@ class PlaylistPage extends StatelessWidget {
                       const SizedBox(width: 10),
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed:
-                              paths.isEmpty ? null : () => p.shuffleAll(paths),
+                          onPressed: PlaylistService.instance
+                                  .playable(paths)
+                                  .isEmpty
+                              ? null
+                              : () => p.shuffleAll(paths),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.text,
                             side: const BorderSide(color: AppColors.border),
@@ -288,34 +298,78 @@ class _PlaylistSongRow extends StatelessWidget {
       if (song?.album != null) song!.album!,
       if (plays != null) '$plays plays',
     ].where((s) => s.isNotEmpty).join(' · ');
+    final disabled = PlaylistService.instance.isDisabled(path);
     return InkWell(
-      onTap: () => p.play(path, queue),
+      onTap: () => disabled
+          ? showDisabledSnack(context, path)
+          : p.play(path, queue),
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
-            ArtThumb(artPath: PlayerController.artOf(path), size: 48),
-            const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(PlayerController.titleOf(path),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: current ? AppColors.accent : AppColors.text,
-                      )),
-                  const SizedBox(height: 3),
-                  Text(subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13, color: AppColors.muted)),
-                ],
+              child: DisabledFade(
+                disabled: disabled,
+                child: Row(
+                  children: [
+                    Stack(
+                      children: [
+                        ArtThumb(
+                            artPath: PlayerController.artOf(path), size: 48),
+                        if (current)
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0x99000000),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: AppColors.accent, width: 2),
+                              ),
+                              alignment: Alignment.center,
+                              child: PlayingBars(
+                                  playing: p.isPlaying, size: 20),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(PlayerController.titleOf(path),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: current
+                                    ? AppColors.accent
+                                    : AppColors.text,
+                                decoration: disabled
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                              )),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              if (disabled) const DisabledTag(),
+                              Expanded(
+                                child: Text(subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.muted)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             SongMenu(path: path, onRemoveFromPlaylist: onRemove),

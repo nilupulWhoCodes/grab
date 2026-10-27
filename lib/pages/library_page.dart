@@ -5,7 +5,9 @@ import '../services/library_service.dart';
 import '../services/player_controller.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
+import '../services/playlist_service.dart';
 import '../widgets/art_thumb.dart';
+import '../widgets/playing_bars.dart';
 import '../widgets/update_ui.dart';
 import 'playlists_view.dart';
 
@@ -49,7 +51,11 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable:
-          Listenable.merge([LibraryService.instance, PlayerController.instance]),
+          Listenable.merge([
+            LibraryService.instance,
+            PlayerController.instance,
+            PlaylistService.instance,
+          ]),
       builder: (context, _) {
         final lib = LibraryService.instance;
         final player = PlayerController.instance;
@@ -198,7 +204,12 @@ class _LibraryPageState extends State<LibraryPage> {
                               song: s,
                               isCurrent: current,
                               isPlaying: current && player.isPlaying,
-                              onTap: () => player.play(s.path, paths),
+                              disabled:
+                                  PlaylistService.instance.isDisabled(s.path),
+                              onTap: () =>
+                                  PlaylistService.instance.isDisabled(s.path)
+                                      ? showDisabledSnack(context, s.path)
+                                      : player.play(s.path, paths),
                             );
                           },
                         ),
@@ -255,12 +266,14 @@ class _SongRow extends StatelessWidget {
     required this.song,
     required this.isCurrent,
     required this.isPlaying,
+    required this.disabled,
     required this.onTap,
   });
 
   final Song song;
   final bool isCurrent;
   final bool isPlaying;
+  final bool disabled;
   final VoidCallback onTap;
 
   @override
@@ -275,52 +288,69 @@ class _SongRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
-            Stack(
-              children: [
-                ArtThumb(artPath: song.artPath, size: 52, radius: 12),
-                if (isCurrent)
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0x99000000),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.accent, width: 2),
-                      ),
-                      child: Icon(
-                        isPlaying
-                            ? Icons.graphic_eq_rounded
-                            : Icons.play_arrow_rounded,
-                        color: AppColors.accent,
-                        semanticLabel: isPlaying ? 'Playing' : 'Paused',
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    song.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: isCurrent ? AppColors.accent : AppColors.text,
+              child: DisabledFade(
+                disabled: disabled,
+                child: Row(
+                  children: [
+                    Stack(
+                      children: [
+                        ArtThumb(artPath: song.artPath, size: 52, radius: 12),
+                        if (isCurrent)
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0x99000000),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: AppColors.accent, width: 2),
+                              ),
+                              alignment: Alignment.center,
+                              child: PlayingBars(playing: isPlaying),
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle.isEmpty ? _mb(song.size) : subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style:
-                        const TextStyle(fontSize: 13, color: AppColors.muted),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: isCurrent
+                                  ? AppColors.accent
+                                  : AppColors.text,
+                              decoration: disabled
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              if (disabled) const DisabledTag(),
+                              Expanded(
+                                child: Text(
+                                  subtitle.isEmpty ? _mb(song.size) : subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 13, color: AppColors.muted),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             SongMenu(path: song.path),

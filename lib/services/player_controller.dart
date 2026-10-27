@@ -144,6 +144,10 @@ class PlayerController extends ChangeNotifier {
       await toggle();
       return;
     }
+    // Disabled songs (e.g. ringtones) never play.
+    final lists = PlaylistService.instance;
+    if (lists.isDisabled(path)) return;
+    queue = lists.playable(queue);
     await _askNotifications();
     if (queue.isEmpty) queue = [path];
     try {
@@ -161,6 +165,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> shuffleAll(List<String> queue) async {
+    queue = PlaylistService.instance.playable(queue);
     if (queue.isEmpty) return;
     final start = (List.of(queue)..shuffle()).first;
     await play(start, queue, shuffleAll: true);
@@ -218,6 +223,7 @@ class PlayerController extends ChangeNotifier {
 
   /// Puts [path] right after the current song (or plays it if nothing is).
   Future<void> playNext(String path) async {
+    if (PlaylistService.instance.isDisabled(path)) return;
     final i = currentIndex;
     if (i == null) return play(path, [path]);
     await player.insertAudioSource(i + 1, _source(path));
@@ -225,6 +231,7 @@ class PlayerController extends ChangeNotifier {
 
   /// Adds [path] to the end of the queue (or plays it if nothing is).
   Future<void> addToQueue(String path) async {
+    if (PlaylistService.instance.isDisabled(path)) return;
     if (currentIndex == null) return play(path, [path]);
     await player.addAudioSource(_source(path));
   }
@@ -240,6 +247,19 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> move(int from, int to) => player.moveAudioSource(from, to);
+
+  /// After songs are disabled, take them out of the upcoming queue
+  /// (the one playing right now finishes normally).
+  Future<void> dropDisabled() async {
+    final lists = PlaylistService.instance;
+    final seq = queue;
+    final cur = currentIndex;
+    for (var i = seq.length - 1; i >= 0; i--) {
+      if (i != cur && lists.isDisabled(seq[i].id)) {
+        await player.removeAudioSourceAt(i);
+      }
+    }
+  }
 
   /// Removes a deleted file from the queue.
   Future<void> forget(String path) async {

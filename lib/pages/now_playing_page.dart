@@ -12,6 +12,9 @@ class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
 
   static Route<void> route() => PageRouteBuilder(
+        opaque: false,
+        transitionDuration: const Duration(milliseconds: 320),
+        reverseTransitionDuration: const Duration(milliseconds: 260),
         pageBuilder: (_, __, ___) => const NowPlayingPage(),
         transitionsBuilder: (_, anim, __, child) => SlideTransition(
           position: Tween(begin: const Offset(0, 1), end: Offset.zero)
@@ -25,13 +28,88 @@ class NowPlayingPage extends StatefulWidget {
   State<NowPlayingPage> createState() => _NowPlayingPageState();
 }
 
-class _NowPlayingPageState extends State<NowPlayingPage> {
+class _NowPlayingPageState extends State<NowPlayingPage>
+    with SingleTickerProviderStateMixin {
   double? _dragValue;
+
+  // Drag down to collapse.
+  double _dragY = 0;
+  late final AnimationController _snap = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  )..addListener(() => setState(() => _dragY = _snapFrom * (1 - _snap.value)));
+  double _snapFrom = 0;
+  bool _closing = false;
+
+  // Swipe the artwork left/right to change song.
+  final PageController _pager = PageController(viewportFraction: 1);
+  bool _syncing = false;
+  int? _shownIndex;
+
+  @override
+  void dispose() {
+    _snap.dispose();
+    _pager.dispose();
+    super.dispose();
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    if (_closing) return;
+    setState(() => _dragY = (_dragY + d.delta.dy).clamp(0.0, double.infinity));
+  }
+
+  void _onDragEnd(DragEndDetails d) {
+    if (_closing) return;
+    final height = MediaQuery.sizeOf(context).height;
+    final fast = (d.primaryVelocity ?? 0) > 700;
+    if (fast || _dragY > height * 0.22) {
+      _closing = true;
+      Navigator.of(context).maybePop();
+    } else {
+      _snapFrom = _dragY;
+      _snap.forward(from: 0);
+    }
+  }
+
+  /// Keeps the artwork pager on the song that's actually playing.
+  void _syncPager(List<int> order, int? current) {
+    if (current == null || current == _shownIndex) return;
+    _shownIndex = current;
+    final page = order.indexOf(current);
+    if (page < 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || !_pager.hasClients) return;
+      final now = _pager.page?.round();
+      if (now == page) return;
+      _syncing = true;
+      if (now == null || (now - page).abs() > 1) {
+        _pager.jumpToPage(page);
+      } else {
+        await _pager.animateToPage(page,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic);
+      }
+      _syncing = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final p = PlayerController.instance;
-    return Scaffold(
+    final height = MediaQuery.sizeOf(context).height;
+    final progress = (_dragY / (height * 0.6)).clamp(0.0, 1.0);
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragUpdate: _onDragUpdate,
+      onVerticalDragEnd: _onDragEnd,
+      child: Transform.translate(
+        offset: Offset(0, _dragY),
+        child: ClipRRect(
+          borderRadius: BorderRadius.vertical(
+              top: Radius.circular(_dragY > 0 ? 28 : 0)),
+          child: Opacity(
+            opacity: 1 - progress * 0.35,
+            child: Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
         child: ListenableBuilder(
@@ -69,37 +147,62 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     ],
                   ),
                   const Spacer(),
-                  LayoutBuilder(
-                    builder: (context, c) => p.currentArt == null
-                        ? AspectRatio(
-                            aspectRatio: 1,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: AppColors.surface,
-                                borderRadius: BorderRadius.circular(28),
-                                border: Border.all(color: AppColors.line),
-                              ),
-                              child: Center(
-                                child: Container(
-                                  width: 120,
-                                  height: 120,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.selectedFill,
-                                    borderRadius: BorderRadius.circular(60),
+                  LayoutBuilder(builder: (context, c) {
+                    final queue = p.queue;
+                    final order = p.player.effectiveIndices
+                        .where((i) => i < queue.length)
+                        .toList();
+                    _syncPager(order, p.currentIndex);
+                    final side = c.maxWidth;
+                    return SizedBox(
+                      width: side,
+                      height: side,
+                      child: PageView.builder(
+                        controller: _pager,
+                        itemCount: order.length,
+                        onPageChanged: (page) {
+                          if (_syncing || page >= order.length) return;
+                          _shownIndex = order[page];
+                          p.jumpTo(order[page]);
+                        },
+                        itemBuilder: (context, k) {
+                          final art = queue[order[k]].artUri?.toFilePath();
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: art == null
+                                ? Container(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surface,
+                                      borderRadius: BorderRadius.circular(28),
+                                      border:
+                                          Border.all(color: AppColors.line),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Container(
+                                      width: 120,
+                                      height: 120,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.selectedFill,
+                                        borderRadius:
+                                            BorderRadius.circular(60),
+                                      ),
+                                      child: const Icon(
+                                          Icons.music_note_rounded,
+                                          size: 56,
+                                          color: AppColors.accent),
+                                    ),
+                                  )
+                                : ArtThumb(
+                                    artPath: art,
+                                    size: side - 8,
+                                    radius: 28,
+                                    iconSize: 56,
                                   ),
-                                  child: const Icon(Icons.music_note_rounded,
-                                      size: 56, color: AppColors.accent),
-                                ),
-                              ),
-                            ),
-                          )
-                        : ArtThumb(
-                            artPath: p.currentArt,
-                            size: c.maxWidth,
-                            radius: 28,
-                            iconSize: 56,
-                          ),
-                  ),
+                          );
+                        },
+                      ),
+                    );
+                  }),
                   const Spacer(),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,6 +416,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               ),
             );
           },
+        ),
+      ),
+            ),
+          ),
         ),
       ),
     );

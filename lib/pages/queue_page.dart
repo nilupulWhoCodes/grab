@@ -4,6 +4,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import '../services/player_controller.dart';
 import '../theme.dart';
 import '../widgets/art_thumb.dart';
+import '../widgets/playing_bars.dart';
 
 /// "Up next": the play queue. Drag to reorder, swipe to remove, tap to jump.
 class QueuePage extends StatelessWidget {
@@ -156,8 +157,23 @@ class _QueueRow extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
           child: Row(
             children: [
-              ArtThumb(
-                  artPath: item.artUri?.toFilePath(), size: 44, radius: 10),
+              Stack(
+                children: [
+                  ArtThumb(
+                      artPath: item.artUri?.toFilePath(), size: 44, radius: 10),
+                  if (isCurrent)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0x99000000),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        alignment: Alignment.center,
+                        child: PlayingBars(playing: p.isPlaying, size: 18),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

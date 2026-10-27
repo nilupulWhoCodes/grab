@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import '../services/download_manager.dart';
 import '../services/player_controller.dart';
 import '../theme.dart';
+import '../services/playlist_service.dart';
 import '../widgets/art_thumb.dart';
+import '../widgets/playing_bars.dart';
 
 String _mb(int bytes) => '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 
@@ -22,8 +24,11 @@ class DownloadsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge(
-          [DownloadManager.instance, PlayerController.instance]),
+      listenable: Listenable.merge([
+        DownloadManager.instance,
+        PlayerController.instance,
+        PlaylistService.instance,
+      ]),
       builder: (context, _) {
         final manager = DownloadManager.instance;
         final active = manager.active;
@@ -77,8 +82,11 @@ class DownloadsView extends StatelessWidget {
                           isCurrent: player.currentPath == f.path,
                           isPlaying:
                               player.currentPath == f.path && player.isPlaying,
-                          onTap: () => player.play(
-                              f.path, library.map((e) => e.path).toList()),
+                          onTap: () => PlaylistService.instance
+                                  .isDisabled(f.path)
+                              ? showDisabledSnack(context, f.path)
+                              : player.play(
+                                  f.path, library.map((e) => e.path).toList()),
                         ),
                   ],
                 ),
@@ -306,11 +314,11 @@ class _TrackRow extends StatelessWidget {
                           ? Border.all(color: AppColors.accent, width: 2)
                           : null,
                     ),
-                    child: Icon(
-                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                      color: isCurrent ? AppColors.accent : AppColors.text,
-                      semanticLabel: isPlaying ? 'Pause' : 'Play',
-                    ),
+                    alignment: Alignment.center,
+                    child: isCurrent
+                        ? PlayingBars(playing: isPlaying, size: 20)
+                        : const Icon(Icons.play_arrow_rounded,
+                            color: AppColors.text, semanticLabel: 'Play'),
                   ),
                 ),
               ],
