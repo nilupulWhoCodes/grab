@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
@@ -27,12 +28,12 @@ class DownloadTask {
   double progress = 0; // 0..1
   int received = 0;
   int total = 0;
+  int attempt = 0; // which source is being tried (1-based)
   String? error;
   String? outputPath;
 
   bool _cancelled = false;
-  StreamSubscription<List<int>>? _sub;
-  Completer<void>? _streamDone;
+  HttpClient? _http;
   int? _ffmpegSessionId;
 
   bool get isActive =>
@@ -44,10 +45,24 @@ class DownloadTask {
 
 class _Cancelled implements Exception {}
 
-/// Downloads audio streams one at a time and converts them to MP3 on-device.
+class _SourceFailed implements Exception {
+  _SourceFailed(this.reason);
+  final String reason;
+  @override
+  String toString() => reason;
+}
+
+/// Downloads audio one task at a time and converts it to MP3 on-device.
 class DownloadManager extends ChangeNotifier {
   DownloadManager._();
   static final instance = DownloadManager._();
+
+  /// No bytes for this long = the source is stalled; try the next one.
+  static const _idleTimeout = Duration(seconds: 20);
+  static const _connectTimeout = Duration(seconds: 15);
+
+  /// YouTube throttles big single requests; fetch in ~10 MB ranges.
+  static const _chunk = 10 * 1024 * 1024;
 
   final List<DownloadTask> tasks = [];
   List<File> library = [];
@@ -93,20 +108,20 @@ class DownloadManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> cancel(DownloadTask t) async {
+  /// Stops a task right away, whatever it is doing.
+  void cancel(DownloadTask t) {
     t._cancelled = true;
-    await t._sub?.cancel();
-    if (t._streamDone != null && !t._streamDone!.isCompleted) {
-      t._streamDone!.completeError(_Cancelled());
-    }
-    if (t._ffmpegSessionId != null) {
-      await FFmpegKit.cancel(t._ffmpegSessionId);
-    }
-    if (t.status == TaskStatus.queued) {
-      t.status = TaskStatus.cancelled;
-      tasks.remove(t);
-    }
+    t.status = TaskStatus.cancelled;
+    tasks.remove(t);
     notifyListeners();
+    // Abort network and conversion without waiting on them.
+    try {
+      t._http?.close(force: true);
+    } catch (_) {}
+    final sid = t._ffmpegSessionId;
+    if (sid != null) {
+      FFmpegKit.cancel(sid).catchError((_) {});
+    }
   }
 
   Future<void> deleteFile(File f) async {
@@ -133,63 +148,66 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
+  void _notifyIfActive(DownloadTask t) {
+    if (!t._cancelled) notifyListeners();
+  }
+
   Future<void> _run(DownloadTask t) async {
     File? tmp;
-    var lastNotified = -1.0;
-    void update({bool force = false}) {
-      if (force || (t.progress - lastNotified).abs() >= 0.005) {
-        lastNotified = t.progress;
-        notifyListeners();
-      }
-    }
-
     try {
       await StorageService.instance.ensurePermission();
+      if (t._cancelled) throw _Cancelled();
 
       t.status = TaskStatus.fetching;
-      update(force: true);
-      final audio = await YoutubeService.instance.bestAudio(t.info.id);
-      if (t._cancelled) throw _Cancelled();
-
-      t.total = audio.size.totalBytes;
-      t.status = TaskStatus.downloading;
-      update(force: true);
+      _notifyIfActive(t);
 
       final tmpDir = await getTemporaryDirectory();
-      tmp = File('${tmpDir.path}/${t.info.id}.${audio.container.name}');
-      final sink = tmp.openWrite();
-      t._streamDone = Completer<void>();
-      t._sub = YoutubeService.instance.open(audio).listen(
-        (chunk) {
-          sink.add(chunk);
-          t.received += chunk.length;
-          if (t.total > 0) t.progress = 0.85 * t.received / t.total;
-          update();
-        },
-        onError: (Object e) {
-          if (!t._streamDone!.isCompleted) t._streamDone!.completeError(e);
-        },
-        onDone: () {
-          if (!t._streamDone!.isCompleted) t._streamDone!.complete();
-        },
-        cancelOnError: true,
-      );
-      try {
-        await t._streamDone!.future;
-      } finally {
-        await sink.flush();
-        await sink.close();
+      String? lastReason;
+      var ok = false;
+
+      await for (final source
+          in YoutubeService.instance.candidates(t.info.id)) {
+        if (t._cancelled) throw _Cancelled();
+        t.attempt++;
+        t.status = TaskStatus.downloading;
+        t.received = 0;
+        t.total = source.size;
+        t.progress = 0;
+        _notifyIfActive(t);
+
+        tmp = File('${tmpDir.path}/${t.info.id}_${t.attempt}.${source.extension}');
+        try {
+          await _download(t, source, tmp);
+          ok = true;
+          break;
+        } on _Cancelled {
+          rethrow;
+        } catch (e) {
+          if (t._cancelled) throw _Cancelled();
+          lastReason = e.toString();
+          try {
+            if (await tmp.exists()) await tmp.delete();
+          } catch (_) {}
+          tmp = null;
+          t.status = TaskStatus.fetching;
+          _notifyIfActive(t);
+        }
       }
       if (t._cancelled) throw _Cancelled();
+      if (!ok || tmp == null) {
+        throw Exception(
+            'YouTube refused every audio source${lastReason == null ? '' : ' ($lastReason)'}. '
+            'Try again later or update the app.');
+      }
 
       t.status = TaskStatus.converting;
       t.progress = 0.85;
-      update(force: true);
+      _notifyIfActive(t);
 
       final out = await StorageService.instance.uniqueFile(t.fileName);
-      final ok = await _convert(t, tmp, out);
+      final converted = await _convert(t, tmp, out);
       if (t._cancelled) throw _Cancelled();
-      if (!ok) throw Exception('Converting to MP3 failed.');
+      if (!converted) throw Exception('Converting to MP3 failed.');
 
       t.outputPath = out.path;
       t.progress = 1;
@@ -201,16 +219,80 @@ class DownloadManager extends ChangeNotifier {
       t.status = TaskStatus.cancelled;
       tasks.remove(t);
     } catch (e) {
-      t.status = TaskStatus.failed;
-      t.error = YoutubeService.friendlyError(e);
-      YoutubeService.instance.reset();
+      if (t._cancelled) {
+        t.status = TaskStatus.cancelled;
+        tasks.remove(t);
+      } else {
+        t.status = TaskStatus.failed;
+        t.error = YoutubeService.friendlyError(e);
+        YoutubeService.instance.reset();
+      }
     } finally {
-      t._sub = null;
+      t._http = null;
       t._ffmpegSessionId = null;
       try {
         if (tmp != null && await tmp.exists()) await tmp.delete();
       } catch (_) {}
       notifyListeners();
+    }
+  }
+
+  /// Downloads [source] into [dest] in ranged chunks, failing fast on HTTP
+  /// errors or when the connection goes quiet.
+  Future<void> _download(DownloadTask t, AudioCandidate source, File dest) async {
+    final client = HttpClient()
+      ..connectionTimeout = _connectTimeout
+      ..idleTimeout = const Duration(seconds: 5);
+    t._http = client;
+    final sink = dest.openWrite();
+    final isAndroidUrl = source.url.queryParameters['c'] == 'ANDROID';
+    var pos = 0;
+    var lastNotified = -1.0;
+    try {
+      while (pos < source.size) {
+        if (t._cancelled) throw _Cancelled();
+        final to = min(pos + _chunk, source.size) - 1;
+        final uri = isAndroidUrl
+            ? source.url
+            : Uri.parse('${source.url}&range=$pos-$to');
+
+        final req = await client.getUrl(uri).timeout(_idleTimeout);
+        if (isAndroidUrl) {
+          req.headers.set(HttpHeaders.rangeHeader, 'bytes=$pos-$to');
+          req.headers.set(HttpHeaders.userAgentHeader,
+              'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip');
+        }
+        final res = await req.close().timeout(_idleTimeout);
+        if (res.statusCode >= 400) {
+          res.drain<void>().catchError((_) {});
+          throw _SourceFailed('HTTP ${res.statusCode}');
+        }
+
+        final before = pos;
+        await for (final data in res.timeout(_idleTimeout,
+            onTimeout: (s) => s.addError(_SourceFailed('stalled')))) {
+          if (t._cancelled) throw _Cancelled();
+          sink.add(data);
+          pos += data.length;
+          t.received = pos;
+          t.progress = 0.85 * pos / source.size;
+          if (t.progress - lastNotified >= 0.005) {
+            lastNotified = t.progress;
+            _notifyIfActive(t);
+          }
+        }
+        if (pos == before) throw _SourceFailed('empty response');
+      }
+    } on _Cancelled {
+      rethrow;
+    } catch (e) {
+      if (t._cancelled) throw _Cancelled();
+      rethrow;
+    } finally {
+      await sink.flush().catchError((_) {});
+      await sink.close().catchError((_) {});
+      client.close(force: true);
+      if (identical(t._http, client)) t._http = null;
     }
   }
 
@@ -236,7 +318,7 @@ class DownloadManager extends ChangeNotifier {
       },
       null,
       (stats) {
-        if (durationMs > 0) {
+        if (durationMs > 0 && !t._cancelled) {
           final frac = (stats.getTime() / durationMs).clamp(0.0, 1.0);
           t.progress = 0.85 + 0.15 * frac;
           notifyListeners();
@@ -244,6 +326,9 @@ class DownloadManager extends ChangeNotifier {
       },
     );
     t._ffmpegSessionId = session.getSessionId();
+    if (t._cancelled) {
+      FFmpegKit.cancel(t._ffmpegSessionId).catchError((_) {});
+    }
     final ok = await done.future;
     if (!ok) {
       try {

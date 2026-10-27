@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class VideoInfo {
@@ -16,13 +18,34 @@ class VideoInfo {
   final String thumbnailUrl;
 }
 
-/// Thin wrapper around youtube_explode_dart: video details + audio streams.
+/// One downloadable source for a video's audio.
+class AudioCandidate {
+  const AudioCandidate({
+    required this.url,
+    required this.size,
+    required this.extension,
+    required this.isMuxed,
+    required this.clientLabel,
+  });
+
+  final Uri url;
+  final int size;
+  final String extension;
+
+  /// Combined low-quality video+audio stream (audio is extracted by ffmpeg).
+  final bool isMuxed;
+  final String clientLabel;
+}
+
+/// Thin wrapper around youtube_explode_dart: video details + audio sources.
 class YoutubeService {
   YoutubeService._();
   static final instance = YoutubeService._();
 
   YoutubeExplode _yt = YoutubeExplode();
   final _cache = <String, VideoInfo>{};
+
+  static const _timeout = Duration(seconds: 30);
 
   static final _idPatterns = [
     RegExp(r'[?&]v=([A-Za-z0-9_-]{11})'),
@@ -54,7 +77,7 @@ class YoutubeService {
   Future<VideoInfo> info(String id) async {
     final cached = _cache[id];
     if (cached != null) return cached;
-    final v = await _yt.videos.get(id);
+    final v = await _yt.videos.get(id).timeout(_timeout);
     final info = VideoInfo(
       id: id,
       title: v.title,
@@ -66,34 +89,62 @@ class YoutubeService {
     return info;
   }
 
-  /// Best audio-only stream. Falls back to alternative player clients when
-  /// the default ones fail (YouTube changes these regularly).
-  Future<AudioOnlyStreamInfo> bestAudio(String id) async {
-    Object? lastError;
-    final attempts = <List<YoutubeApiClient>?>[
-      null,
-      [YoutubeApiClient.androidVr],
-      [YoutubeApiClient.safari],
+  /// Audio sources to try, best first. Each player client is only asked when
+  /// every source from the previous one has failed, because YouTube blocks
+  /// different clients/streams at different times:
+  ///   1. audio-only streams (best bitrate first)
+  ///   2. the combined 360p stream, whose audio ffmpeg extracts
+  Stream<AudioCandidate> candidates(String id) async* {
+    final clients = <(String, List<YoutubeApiClient>?)>[
+      ('default', null), // library default (androidSdkless in 3.x)
+      ('android_vr', [YoutubeApiClient.androidVr]),
+      ('ios', [YoutubeApiClient.ios]),
     ];
-    for (final clients in attempts) {
+    final seen = <String>{};
+    Object? lastError;
+    var yielded = 0;
+
+    for (final (label, ytClients) in clients) {
+      StreamManifest manifest;
       try {
-        final manifest = clients == null
-            ? await _yt.videos.streamsClient.getManifest(id)
-            : await _yt.videos.streamsClient
-                .getManifest(id, ytClients: clients);
-        final audio = manifest.audioOnly;
-        if (audio.isNotEmpty) return audio.withHighestBitrate();
+        manifest = await (ytClients == null
+                ? _yt.videos.streamsClient.getManifest(id)
+                : _yt.videos.streamsClient.getManifest(id, ytClients: ytClients))
+            .timeout(_timeout);
       } catch (e) {
         lastError = e;
+        continue;
+      }
+
+      final audio = manifest.audioOnly
+          .where((s) => s.fragments.isEmpty && s.size.totalBytes > 0)
+          .toList()
+        ..sort((a, b) =>
+            b.bitrate.bitsPerSecond.compareTo(a.bitrate.bitsPerSecond));
+      final muxed = manifest.muxed
+          .where((s) => s.fragments.isEmpty && s.size.totalBytes > 0)
+          .toList()
+        ..sort((a, b) => a.size.totalBytes.compareTo(b.size.totalBytes));
+
+      for (final s in [...audio.take(2), ...muxed.take(1)]) {
+        if (!seen.add(s.url.toString())) continue;
+        yielded++;
+        yield AudioCandidate(
+          url: s.url,
+          size: s.size.totalBytes,
+          extension: s.container.name,
+          isMuxed: s is MuxedStreamInfo,
+          clientLabel: label,
+        );
       }
     }
-    throw Exception(lastError == null
-        ? 'No audio stream found for this video.'
-        : _friendly(lastError));
-  }
 
-  Stream<List<int>> open(AudioOnlyStreamInfo stream) =>
-      _yt.videos.streamsClient.get(stream);
+    if (yielded == 0) {
+      throw Exception(lastError == null
+          ? 'No downloadable audio found for this video.'
+          : _friendly(lastError));
+    }
+  }
 
   /// Recreate the client (drops stale sessions after errors).
   void reset() {
@@ -104,6 +155,9 @@ class YoutubeService {
   static String _friendly(Object e) {
     final s = e.toString();
     final lower = s.toLowerCase();
+    if (e is TimeoutException || lower.contains('timeout')) {
+      return 'YouTube is not responding. Try again in a bit.';
+    }
     if (lower.contains('socketexception') ||
         lower.contains('failed host lookup')) {
       return 'No internet connection.';

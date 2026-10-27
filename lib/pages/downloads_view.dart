@@ -97,8 +97,12 @@ class _TaskCard extends StatelessWidget {
 
   String get _status => switch (task.status) {
         TaskStatus.queued => 'Waiting…',
-        TaskStatus.fetching => 'Getting audio stream…',
-        TaskStatus.downloading => 'Downloading · ${task.bitrate} kbps',
+        TaskStatus.fetching => task.attempt == 0
+            ? 'Getting audio stream…'
+            : 'That source failed, trying another…',
+        TaskStatus.downloading => task.attempt > 1
+            ? 'Downloading · source ${task.attempt}'
+            : 'Downloading · ${task.bitrate} kbps',
         TaskStatus.converting => 'Converting to MP3…',
         TaskStatus.failed => task.error ?? 'Failed',
         _ => '',
