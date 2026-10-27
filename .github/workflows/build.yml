@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -49,3 +52,25 @@ jobs:
           name: grab-apk
           path: out/*.apk
           retention-days: 30
+
+      # Easy install on the phone: Releases page of the repo.
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Grab build ${{ github.run_number }}
+          body: Install grab-arm64.apk on most phones (grab-armv7.apk for older 32-bit ones).
+          files: out/*.apk
+          make_latest: true
+
+      # Copy of the latest APKs on the `apk` branch (fetchable with plain git).
+      - name: Update apk branch
+        run: |
+          cd out
+          git init -q -b apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add *.apk
+          git commit -q -m "APK build ${{ github.run_number }}"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
