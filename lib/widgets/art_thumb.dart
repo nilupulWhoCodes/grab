@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -42,6 +43,70 @@ class ArtThumb extends StatelessWidget {
                 errorBuilder: (_, __, ___) => Icon(Icons.music_note_rounded,
                     color: AppColors.muted, size: iconSize),
               ),
+      ),
+    );
+  }
+}
+
+/// Large cover for Now Playing: shows the whole image (no zoom/crop).
+/// Wide pictures such as YouTube thumbnails sit on a blurred copy of
+/// themselves, so the square is always filled.
+class ArtCover extends StatelessWidget {
+  const ArtCover({
+    super.key,
+    required this.artPath,
+    required this.size,
+    this.radius = 28,
+  });
+
+  final String artPath;
+  final double size;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final file = File(artPath);
+    Widget fallback() => Container(
+          color: AppColors.surface,
+          alignment: Alignment.center,
+          child: const Icon(Icons.music_note_rounded,
+              size: 56, color: AppColors.muted),
+        );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Blurred, darkened fill behind the picture.
+            ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+              child: ColorFiltered(
+                colorFilter: const ColorFilter.mode(
+                    Color(0x66000000), BlendMode.darken),
+                child: Image.file(
+                  file,
+                  fit: BoxFit.cover,
+                  cacheWidth: 120,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) => fallback(),
+                ),
+              ),
+            ),
+            // The whole picture, never cropped.
+            Image.file(
+              file,
+              fit: BoxFit.contain,
+              cacheWidth: (size * dpr).round(),
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, __, ___) => fallback(),
+            ),
+          ],
+        ),
       ),
     );
   }

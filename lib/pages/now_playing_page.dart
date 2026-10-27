@@ -305,11 +305,10 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                     ? _NoArtCard(
                                         title: item.title,
                                         artist: item.artist ?? '')
-                                    : ArtThumb(
+                                    : ArtCover(
                                         artPath: art,
                                         size: side - 8,
                                         radius: 28,
-                                        iconSize: 56,
                                       ),
                               ),
                             );

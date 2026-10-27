@@ -269,8 +269,9 @@ class DownloadManager extends ChangeNotifier {
   Future<File?> _downloadCover(DownloadTask t, Directory tmpDir) async {
     final id = t.info.id;
     final urls = [
+      // 1280×720 and 320×180 are true 16:9 (no black bars, unlike hqdefault).
       'https://i.ytimg.com/vi/$id/maxresdefault.jpg',
-      'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      'https://i.ytimg.com/vi/$id/mqdefault.jpg',
       t.info.thumbnailUrl,
     ];
     final client = HttpClient()..connectionTimeout = _connectTimeout;
