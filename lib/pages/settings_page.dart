@@ -95,18 +95,19 @@ class SettingsPage extends StatelessWidget {
                     segments: const [
                       ButtonSegment(
                           value: VisualizerStyle.bars,
-                          label: Text('Bars'),
-                          icon: Icon(Icons.bar_chart_rounded)),
+                          label: Text('Bars')),
                       ButtonSegment(
                           value: VisualizerStyle.glow,
-                          label: Text('Glow'),
-                          icon: Icon(Icons.blur_on_rounded)),
+                          label: Text('Glow')),
+                      ButtonSegment(
+                          value: VisualizerStyle.both,
+                          label: Text('Both')),
                       ButtonSegment(
                           value: VisualizerStyle.off,
-                          label: Text('Off'),
-                          icon: Icon(Icons.block_rounded)),
+                          label: Text('Off')),
                     ],
                     selected: {s.visualizer},
+                    showSelectedIcon: false,
                     onSelectionChanged: (v) =>
                         s.update((s) => s.visualizer = v.first),
                     style: SegmentedButton.styleFrom(

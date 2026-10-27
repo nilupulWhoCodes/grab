@@ -146,7 +146,9 @@ class _BarsPainter extends CustomPainter {
       old.bands != bands || old.color != color;
 }
 
-/// Soft glow around the artwork that pulses with the bass.
+/// Colourful glowing ring behind the artwork: it rotates through colours
+/// taken from the cover, swells with the music and the cover pulses on the
+/// bass.
 class VisualizerGlow extends StatelessWidget {
   const VisualizerGlow({
     super.key,
@@ -159,33 +161,100 @@ class VisualizerGlow extends StatelessWidget {
   final Color color;
   final Widget child;
 
+  static double _avg(List<double> b, int from, int to) {
+    if (b.length <= from) return 0;
+    final part = b.sublist(from, math.min(to, b.length));
+    return (part.reduce((a, c) => a + c) / part.length).clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final b = bands;
-    final bass = b == null || b.isEmpty
-        ? 0.0
-        : (b.take(5).reduce((a, c) => a + c) / 5).clamp(0.0, 1.0);
-    final mid = b == null || b.length < 12
-        ? 0.0
-        : (b.skip(6).take(6).reduce((a, c) => a + c) / 6).clamp(0.0, 1.0);
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 90),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.18 + 0.5 * bass),
-            blurRadius: 18 + 60 * bass,
-            spreadRadius: 2 + 16 * bass,
+    final b = bands ?? const <double>[];
+    final bass = _avg(b, 0, 5);
+    final mid = _avg(b, 6, 14);
+    final high = _avg(b, 14, 24);
+    // Ease the curve so quiet passages still glow and loud ones really pop.
+    final energy = math.pow((bass * 0.6 + mid * 0.3 + high * 0.1), 0.7).toDouble();
+
+    final hsl = HSLColor.fromColor(color);
+    Color hue(double shift, double light) => hsl
+        .withHue((hsl.hue + shift) % 360)
+        .withSaturation(math.max(hsl.saturation, 0.8))
+        .withLightness(light)
+        .toColor();
+    final colors = [
+      hue(0, 0.6),
+      hue(70, 0.62),
+      hue(150, 0.58),
+      hue(230, 0.62),
+      hue(300, 0.6),
+      hue(0, 0.6),
+    ];
+
+    final angle =
+        (DateTime.now().millisecondsSinceEpoch % 7000) / 7000 * 2 * math.pi;
+    final spread = 14 + 46 * energy;
+    final blur = 20 + 26 * bass;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        // Wide, soft colour wash.
+        Positioned(
+          left: -spread * 1.4,
+          right: -spread * 1.4,
+          top: -spread * 1.4,
+          bottom: -spread * 1.4,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: (0.25 + 0.55 * energy).clamp(0.0, 1.0),
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: blur + 18, sigmaY: blur + 18),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(60),
+                    gradient: SweepGradient(
+                      colors: colors,
+                      transform: GradientRotation(-angle * 0.6),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-          BoxShadow(
-            color: color.withValues(alpha: 0.1 + 0.3 * mid),
-            blurRadius: 40 + 50 * mid,
-            spreadRadius: 6 * mid,
+        ),
+        // Bright rotating ring hugging the cover.
+        Positioned(
+          left: -spread * 0.55,
+          right: -spread * 0.55,
+          top: -spread * 0.55,
+          bottom: -spread * 0.55,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: (0.45 + 0.55 * energy).clamp(0.0, 1.0),
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: 10 + 10 * bass, sigmaY: 10 + 10 * bass),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(40),
+                    gradient: SweepGradient(
+                      colors: colors,
+                      transform: GradientRotation(angle),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-        ],
-      ),
-      child: child,
+        ),
+        // The cover itself, with a little beat pulse.
+        AnimatedScale(
+          scale: 1 + 0.04 * bass,
+          duration: const Duration(milliseconds: 80),
+          child: child,
+        ),
+      ],
     );
   }
 }

@@ -313,32 +313,44 @@ Future<String?> askPlaylistName(BuildContext context,
 }
 
 void showUndoSnack(BuildContext context, String text, VoidCallback undo) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(
-      content: Text(text),
-      duration: const Duration(seconds: 4),
-      action: SnackBarAction(
-        label: 'Undo',
-        textColor: AppColors.accent,
-        onPressed: undo,
-      ),
-    ));
+  final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+  final bar = messenger.showSnackBar(SnackBar(
+    content: Text(text),
+    duration: const Duration(seconds: 4),
+    action: SnackBarAction(
+      label: 'Undo',
+      textColor: AppColors.accent,
+      onPressed: undo,
+    ),
+  ));
+  _autoClose(bar, const Duration(seconds: 4));
+}
+
+/// Snackbars with a button stay up until dismissed on newer Flutter
+/// versions, so close them ourselves after [after].
+void _autoClose(
+    ScaffoldFeatureController<SnackBar, SnackBarClosedReason> bar,
+    Duration after) {
+  var closed = false;
+  bar.closed.then((_) => closed = true);
+  Future.delayed(after, () {
+    if (!closed) bar.close();
+  });
 }
 
 /// Tapping a disabled song: explain, and offer to switch it back on.
 void showDisabledSnack(BuildContext context, String path) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(
-      content: const Text('This song is disabled, so it won\'t play.'),
-      duration: const Duration(seconds: 4),
-      action: SnackBarAction(
-        label: 'Enable',
-        textColor: AppColors.accent,
-        onPressed: () => PlaylistService.instance.setDisabled(path, false),
-      ),
-    ));
+  final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+  final bar = messenger.showSnackBar(SnackBar(
+    content: const Text('This song is disabled, so it won\'t play.'),
+    duration: const Duration(seconds: 4),
+    action: SnackBarAction(
+      label: 'Enable',
+      textColor: AppColors.accent,
+      onPressed: () => PlaylistService.instance.setDisabled(path, false),
+    ),
+  ));
+  _autoClose(bar, const Duration(seconds: 4));
 }
 
 /// Greys out a disabled song's row.

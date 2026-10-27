@@ -148,7 +148,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            style == VisualizerStyle.glow
+            style == VisualizerStyle.glow || style == VisualizerStyle.both
                 ? VisualizerGlow(
                     bands: bands, color: colors.glow, child: pager)
                 : pager,
@@ -159,7 +159,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                   ? VisualizerPrompt(
                       onTap: request,
                       denied: access == VisualizerAccess.denied)
-                  : style == VisualizerStyle.bars
+                  : style == VisualizerStyle.bars ||
+                          style == VisualizerStyle.both
                       ? VisualizerBars(bands: bands, color: colors.glow)
                       : null,
             ),
