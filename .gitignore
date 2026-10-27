@@ -1,0 +1,25 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+pubspec.lock
+
+# Generated in CI by `flutter create`
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+test/
+*.iml
+.idea/
+.metadata
+
+# Misc
+.DS_Store
+out/
