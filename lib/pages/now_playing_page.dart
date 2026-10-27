@@ -3,7 +3,9 @@ import 'package:just_audio/just_audio.dart';
 
 import '../services/player_controller.dart';
 import '../theme.dart';
+import '../widgets/art_thumb.dart';
 import '../widgets/mini_player.dart' show formatTime;
+import 'queue_page.dart';
 
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
@@ -34,7 +36,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         child: ListenableBuilder(
           listenable: p,
           builder: (context, _) {
-            if (p.currentPath == null) {
+            if (p.currentItem == null) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) Navigator.of(context).maybePop();
               });
@@ -57,31 +59,45 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                             textAlign: TextAlign.center,
                             style: sectionLabel),
                       ),
-                      const SizedBox(width: 48),
+                      IconButton(
+                        tooltip: 'Up next',
+                        onPressed: () =>
+                            Navigator.of(context).push(QueuePage.route()),
+                        icon: const Icon(Icons.queue_music_rounded),
+                      ),
                     ],
                   ),
                   const Spacer(),
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(color: AppColors.line),
-                      ),
-                      child: Center(
-                        child: Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            color: AppColors.selectedFill,
-                            borderRadius: BorderRadius.circular(60),
+                  LayoutBuilder(
+                    builder: (context, c) => p.currentArt == null
+                        ? AspectRatio(
+                            aspectRatio: 1,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(28),
+                                border: Border.all(color: AppColors.line),
+                              ),
+                              child: Center(
+                                child: Container(
+                                  width: 120,
+                                  height: 120,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.selectedFill,
+                                    borderRadius: BorderRadius.circular(60),
+                                  ),
+                                  child: const Icon(Icons.music_note_rounded,
+                                      size: 56, color: AppColors.accent),
+                                ),
+                              ),
+                            ),
+                          )
+                        : ArtThumb(
+                            artPath: p.currentArt,
+                            size: c.maxWidth,
+                            radius: 28,
+                            iconSize: 56,
                           ),
-                          child: const Icon(Icons.music_note_rounded,
-                              size: 56, color: AppColors.accent),
-                        ),
-                      ),
-                    ),
                   ),
                   const Spacer(),
                   Align(
@@ -97,7 +113,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      p.currentArtist ?? '',
+                      [p.currentArtist, p.currentAlbum]
+                          .where((s) => s != null && s.isNotEmpty && s != 'Grab')
+                          .join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style:
@@ -211,6 +229,44 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                           color: p.loopMode == LoopMode.off
                               ? AppColors.muted
                               : AppColors.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            await p.stop();
+                            if (context.mounted) Navigator.of(context).maybePop();
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.text,
+                            side: const BorderSide(color: AppColors.border),
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                          icon: const Icon(Icons.stop_rounded),
+                          label: const Text('Stop'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              Navigator.of(context).push(QueuePage.route()),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.text,
+                            side: const BorderSide(color: AppColors.border),
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                          icon: const Icon(Icons.queue_music_rounded),
+                          label: const Text('Up next'),
                         ),
                       ),
                     ],

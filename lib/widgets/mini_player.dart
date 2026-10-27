@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../pages/now_playing_page.dart';
 import '../services/player_controller.dart';
 import '../theme.dart';
+import 'art_thumb.dart';
 
 String formatTime(Duration d) {
   final h = d.inHours;
@@ -21,12 +22,12 @@ class MiniPlayer extends StatelessWidget {
     return ListenableBuilder(
       listenable: p,
       builder: (context, _) {
-        if (p.currentPath == null) return const SizedBox.shrink();
+        if (p.currentItem == null) return const SizedBox.shrink();
         return GestureDetector(
           onTap: () => Navigator.of(context).push(NowPlayingPage.route()),
           child: Container(
             margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
             decoration: BoxDecoration(
               color: AppColors.card,
               borderRadius: BorderRadius.circular(18),
@@ -46,16 +47,11 @@ class MiniPlayer extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: AppColors.placeholder,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.music_note_rounded,
-                              color: AppColors.accent, size: 20),
-                        ),
+                        ArtThumb(
+                            artPath: p.currentArt,
+                            size: 44,
+                            radius: 10,
+                            iconSize: 20),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -68,16 +64,13 @@ class MiniPlayer extends StatelessWidget {
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600)),
                               const SizedBox(height: 2),
-                              Text('${formatTime(pos)} / ${formatTime(dur)}',
+                              Text(p.currentArtist ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                       fontSize: 12, color: AppColors.muted)),
                             ],
                           ),
-                        ),
-                        IconButton(
-                          tooltip: 'Previous',
-                          onPressed: p.previous,
-                          icon: const Icon(Icons.skip_previous_rounded),
                         ),
                         IconButton.filled(
                           tooltip: p.isPlaying ? 'Pause' : 'Play',
@@ -95,15 +88,24 @@ class MiniPlayer extends StatelessWidget {
                           onPressed: p.next,
                           icon: const Icon(Icons.skip_next_rounded),
                         ),
+                        IconButton(
+                          tooltip: 'Stop',
+                          onPressed: p.stop,
+                          icon: const Icon(Icons.close_rounded,
+                              color: AppColors.muted),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: LinearProgressIndicator(
-                        value: frac,
-                        minHeight: 3,
-                        backgroundColor: AppColors.placeholder,
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: frac,
+                          minHeight: 3,
+                          backgroundColor: AppColors.placeholder,
+                        ),
                       ),
                     ),
                   ],

@@ -4,6 +4,7 @@ Run from the repo root after `flutter create --platforms=android .`
 """
 import pathlib
 import re
+import shutil
 import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -54,7 +55,32 @@ if "requestLegacyExternalStorage" not in text:
 if "com.ryanheise.audioservice.AudioService" not in text:
     i = text.rindex("</application>")
     text = text[:i] + audio_service.lstrip("\n") + "    " + text[i:]
+
+# Home-screen widget receiver (code + resources come from tool/android_overlay).
+widget_receiver = """
+        <receiver android:name=".GrabWidgetProvider"
+            android:exported="true"
+            android:label="Grab">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/grab_widget_info" />
+        </receiver>
+"""
+if "GrabWidgetProvider" not in text:
+    i = text.rindex("</application>")
+    text = text[:i] + widget_receiver.lstrip("\n") + "    " + text[i:]
 manifest.write_text(text, encoding="utf-8")
+
+# --- Copy native files (widget provider, layouts, drawables) -----------------
+overlay = root / "tool" / "android_overlay"
+if overlay.exists():
+    for src in overlay.rglob("*"):
+        if src.is_file():
+            dest = root / "android" / src.relative_to(overlay)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dest)
 
 # --- MainActivity must extend AudioServiceActivity ---------------------------
 activities = list((app / "src" / "main").rglob("MainActivity.kt"))

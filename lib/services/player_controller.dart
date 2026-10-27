@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -5,35 +6,60 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-/// One shared player for the whole app (Music and MP3 parts), with a queue,
-/// shuffle/repeat and lock-screen controls via just_audio_background.
+import 'library_service.dart';
+import 'widget_service.dart';
+
+/// One shared player for the whole app (Music and MP3 parts), with an
+/// editable queue, shuffle/repeat, lock-screen controls and the home widget.
 class PlayerController extends ChangeNotifier {
   PlayerController._() {
-    player.currentIndexStream.listen((_) => notifyListeners());
-    player.playerStateStream.listen((_) => notifyListeners());
-    player.shuffleModeEnabledStream.listen((_) => notifyListeners());
-    player.loopModeStream.listen((_) => notifyListeners());
+    player.currentIndexStream.listen((_) => _changed());
+    player.sequenceStream.listen((_) => _changed());
+    player.playerStateStream.listen((_) => _changed());
+    player.shuffleModeEnabledStream.listen((_) => _changed());
+    player.loopModeStream.listen((_) => _changed());
   }
   static final instance = PlayerController._();
 
   final AudioPlayer player = AudioPlayer();
-  List<String> _paths = [];
   bool _askedNotifications = false;
 
-  bool get isPlaying => player.playing;
+  void _changed() {
+    notifyListeners();
+    WidgetService.instance.update(
+      title: currentItem?.title,
+      artist: currentItem?.artist,
+      artPath: currentItem?.artUri?.toFilePath(),
+      playing: isPlaying,
+    );
+  }
+
+  bool get isPlaying => player.playing && currentItem != null;
   bool get shuffle => player.shuffleModeEnabled;
   LoopMode get loopMode => player.loopMode;
 
-  String? get currentPath {
+  /// The queue in playlist order.
+  List<MediaItem> get queue =>
+      player.sequence.map((s) => s.tag as MediaItem).toList();
+
+  int? get currentIndex {
     final i = player.currentIndex;
-    if (i == null || i < 0 || i >= _paths.length) return null;
-    return _paths[i];
+    if (i == null || i < 0 || i >= player.sequence.length) return null;
+    return i;
   }
 
-  String? get currentTitle =>
-      currentPath == null ? null : titleOf(currentPath!);
-  String? get currentArtist =>
-      currentPath == null ? null : artistOf(currentPath!);
+  MediaItem? get currentItem {
+    final i = currentIndex;
+    return i == null ? null : player.sequence[i].tag as MediaItem;
+  }
+
+  String? get currentPath => currentItem?.id;
+  String? get currentTitle => currentItem?.title;
+  String? get currentArtist => currentItem?.artist;
+  String? get currentAlbum => currentItem?.album;
+  String? get currentArt => currentItem?.artUri?.toFilePath();
+
+  // --- Names when a file has no tags --------------------------------------
 
   static String _stem(String path) {
     final name = path.split(Platform.pathSeparator).last;
@@ -43,18 +69,45 @@ class PlayerController extends ChangeNotifier {
   }
 
   static String titleOf(String path) {
+    final song = LibraryService.instance.songFor(path);
+    if (song != null) return song.title;
     final s = _stem(path);
     final i = s.indexOf(' - ');
     return i > 0 ? s.substring(i + 3).trim() : s;
   }
 
   static String artistOf(String path) {
+    final song = LibraryService.instance.songFor(path);
+    if (song != null) return song.artist;
     final s = _stem(path);
     final i = s.indexOf(' - ');
     if (i > 0) return s.substring(0, i).trim();
     final parts = path.split(Platform.pathSeparator);
     return parts.length > 1 ? parts[parts.length - 2] : '';
   }
+
+  static String? artOf(String path) {
+    final art = LibraryService.instance.songFor(path)?.artPath;
+    return art != null && File(art).existsSync() ? art : null;
+  }
+
+  AudioSource _source(String path) {
+    final song = LibraryService.instance.songFor(path);
+    final art = artOf(path);
+    return AudioSource.file(
+      path,
+      tag: MediaItem(
+        id: path,
+        title: titleOf(path),
+        artist: artistOf(path),
+        album: song?.album ?? 'Grab',
+        duration: song?.duration,
+        artUri: art == null ? null : Uri.file(art),
+      ),
+    );
+  }
+
+  // --- Playback ------------------------------------------------------------
 
   /// Plays [path] with [queue] as the playlist. Tapping the current song
   /// toggles play/pause.
@@ -65,31 +118,19 @@ class PlayerController extends ChangeNotifier {
       return;
     }
     await _askNotifications();
-    _paths = List.of(queue);
-    final sources = [
-      for (final p in _paths)
-        AudioSource.file(
-          p,
-          tag: MediaItem(
-            id: p,
-            title: titleOf(p),
-            artist: artistOf(p),
-            album: 'Grab',
-          ),
-        ),
-    ];
+    if (queue.isEmpty) queue = [path];
     try {
       await player.setShuffleModeEnabled(shuffleAll || player.shuffleModeEnabled);
       await player.setAudioSources(
-        sources,
-        initialIndex: _paths.indexOf(path).clamp(0, _paths.length - 1),
+        [for (final p in queue) _source(p)],
+        initialIndex: queue.indexOf(path).clamp(0, queue.length - 1),
       );
       if (shuffleAll) await player.shuffle();
       player.play();
     } catch (_) {
-      _paths = [];
+      await stop();
     }
-    notifyListeners();
+    _changed();
   }
 
   Future<void> shuffleAll(List<String> queue) async {
@@ -99,7 +140,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> toggle() async {
-    if (currentPath == null) return;
+    if (currentItem == null) return;
     if (player.playing) {
       await player.pause();
     } else {
@@ -108,7 +149,15 @@ class PlayerController extends ChangeNotifier {
       }
       player.play();
     }
-    notifyListeners();
+  }
+
+  /// Stops playback and clears the queue (hides the mini player).
+  Future<void> stop() async {
+    try {
+      await player.stop();
+      await player.clearAudioSources();
+    } catch (_) {}
+    _changed();
   }
 
   Future<void> next() async {
@@ -138,12 +187,38 @@ class PlayerController extends ChangeNotifier {
     await player.setLoopMode(next);
   }
 
-  /// Stop if the file being removed is playing.
+  // --- Queue editing -------------------------------------------------------
+
+  /// Puts [path] right after the current song (or plays it if nothing is).
+  Future<void> playNext(String path) async {
+    final i = currentIndex;
+    if (i == null) return play(path, [path]);
+    await player.insertAudioSource(i + 1, _source(path));
+  }
+
+  /// Adds [path] to the end of the queue (or plays it if nothing is).
+  Future<void> addToQueue(String path) async {
+    if (currentIndex == null) return play(path, [path]);
+    await player.addAudioSource(_source(path));
+  }
+
+  Future<void> jumpTo(int index) async {
+    await player.seek(Duration.zero, index: index);
+    if (!player.playing) player.play();
+  }
+
+  Future<void> removeAt(int index) async {
+    if (player.sequence.length <= 1) return stop();
+    await player.removeAudioSourceAt(index);
+  }
+
+  Future<void> move(int from, int to) => player.moveAudioSource(from, to);
+
+  /// Removes a deleted file from the queue.
   Future<void> forget(String path) async {
-    if (currentPath == path) {
-      await player.stop();
-      _paths = [];
-      notifyListeners();
+    final seq = queue;
+    for (var i = seq.length - 1; i >= 0; i--) {
+      if (seq[i].id == path) await removeAt(i);
     }
   }
 

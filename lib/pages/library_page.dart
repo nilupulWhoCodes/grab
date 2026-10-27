@@ -5,6 +5,7 @@ import '../services/library_service.dart';
 import '../services/player_controller.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
+import '../widgets/art_thumb.dart';
 
 String _mb(int bytes) => '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 
@@ -160,7 +161,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     : RefreshIndicator(
                         onRefresh: () => lib.scan(),
                         child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 8, 16),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 0, 16),
                           itemCount: songs.length,
                           itemBuilder: (context, i) {
                             final s = songs[i];
@@ -236,29 +237,38 @@ class _SongRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = PlayerController.instance;
+    final subtitle = [song.artist, song.album]
+        .where((s) => s != null && s.isNotEmpty)
+        .join(' · ');
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: isCurrent ? AppColors.accent : AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                isCurrent
-                    ? (isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded)
-                    : Icons.music_note_rounded,
-                color: isCurrent ? AppColors.bg : AppColors.muted,
-                semanticLabel: isPlaying ? 'Pause' : 'Play',
-              ),
+            Stack(
+              children: [
+                ArtThumb(artPath: song.artPath, size: 52, radius: 12),
+                if (isCurrent)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0x99000000),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.accent, width: 2),
+                      ),
+                      child: Icon(
+                        isPlaying
+                            ? Icons.graphic_eq_rounded
+                            : Icons.play_arrow_rounded,
+                        color: AppColors.accent,
+                        semanticLabel: isPlaying ? 'Playing' : 'Paused',
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -277,9 +287,7 @@ class _SongRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    [song.artist, _mb(song.size)]
-                        .where((s) => s.isNotEmpty)
-                        .join(' · '),
+                    subtitle.isEmpty ? _mb(song.size) : subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style:
@@ -288,12 +296,16 @@ class _SongRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (isCurrent && isPlaying)
-              const Padding(
-                padding: EdgeInsets.only(right: 12),
-                child: Icon(Icons.graphic_eq_rounded,
-                    color: AppColors.accent, size: 20),
-              ),
+            SongMenu(
+              onPlayNext: () {
+                p.playNext(song.path);
+                showQueuedSnack(context, 'Playing next: ${song.title}');
+              },
+              onAddToQueue: () {
+                p.addToQueue(song.path);
+                showQueuedSnack(context, 'Added to queue: ${song.title}');
+              },
+            ),
           ],
         ),
       ),

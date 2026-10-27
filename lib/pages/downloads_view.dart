@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/download_manager.dart';
 import '../services/player_controller.dart';
 import '../theme.dart';
+import '../widgets/art_thumb.dart';
 
 String _mb(int bytes) => '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 
@@ -288,18 +289,31 @@ class _TrackRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: isCurrent ? AppColors.accent : AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: isCurrent ? AppColors.bg : AppColors.text,
-                semanticLabel: isPlaying ? 'Pause' : 'Play',
-              ),
+            Stack(
+              children: [
+                ArtThumb(
+                    artPath: PlayerController.artOf(file.path),
+                    size: 48,
+                    radius: 12),
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isCurrent
+                          ? const Color(0x99000000)
+                          : const Color(0x55000000),
+                      borderRadius: BorderRadius.circular(12),
+                      border: isCurrent
+                          ? Border.all(color: AppColors.accent, width: 2)
+                          : null,
+                    ),
+                    child: Icon(
+                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: isCurrent ? AppColors.accent : AppColors.text,
+                      semanticLabel: isPlaying ? 'Pause' : 'Play',
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -323,16 +337,18 @@ class _TrackRow extends StatelessWidget {
                 ],
               ),
             ),
-            PopupMenuButton<String>(
-              tooltip: 'More options',
-              icon: const Icon(Icons.more_vert_rounded, color: AppColors.muted),
-              color: AppColors.surface2,
-              onSelected: (v) {
-                if (v == 'delete') _confirmDelete(context);
+            SongMenu(
+              onPlayNext: () {
+                PlayerController.instance.playNext(file.path);
+                showQueuedSnack(context,
+                    'Playing next: ${PlayerController.titleOf(file.path)}');
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
+              onAddToQueue: () {
+                PlayerController.instance.addToQueue(file.path);
+                showQueuedSnack(context,
+                    'Added to queue: ${PlayerController.titleOf(file.path)}');
+              },
+              onDelete: () => _confirmDelete(context),
             ),
           ],
         ),
